@@ -8,6 +8,7 @@ import (
 	"time"
 	"syscall"
 	"strings"
+	"fmt"
 
 	"github.com/ri5hii/Machina/internal/api"
 	"github.com/ri5hii/Machina/internal/engine"
@@ -61,11 +62,25 @@ func setupLogger(cfg Config) *slog.Logger {
 	return slog.New(handler)
 }
 
-func main() {
+func commandHelp() {
+	helpText := `
+Machina: 
+Usage: machina [options]
+
+Options:
+  start			Start the server
+  help          Show this help message
+  version       Show version information
+  --port <port>   Set the server port (default: 8080)
+  --log-level <level> Set log level (DEBUG, INFO, WARN, ERROR, DEFAULT)
+`
+	fmt.Println(helpText)	
+}
+
+func commandStart(cfg Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	
-	cfg := loadConfig()
 	logger := setupLogger(cfg)
 	eng := engine.New(logger)
 	srv := api.New(api.Config{
@@ -84,5 +99,54 @@ func main() {
 		logger.Error("server shutdown error", "error", err)
 	}
 	eng.Shutdown()
-	
 }
+func commandVersion() {
+	cfg := loadConfig()
+	println(cfg.Version)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		commandHelp()
+		return
+	}
+
+	switch os.Args[1] {
+		case "start":
+			cfg := loadConfig()
+			args := os.Args[2:]
+			for i := 0; i < len(args); i++ {
+				switch args[i] {
+					case "--port":
+						if i+1 < len(args) {
+							cfg.Port = args[i+1]
+							fmt.Println("Port set to", cfg.Port)
+							i++
+						} else {
+							fmt.Println("Error: --port flag requires a value")
+							return
+						}
+					case "--log-level":
+						if i+1 < len(args) {
+							cfg.LogLevel = args[i+1]
+							i++
+						} else {
+							fmt.Println("Error: --log-level flag requires a value")
+							return
+						}
+					default:
+						fmt.Println("Unknown option:", args[i])
+						commandHelp()
+						return
+				}
+			}
+			commandStart(cfg)
+		case "help":
+			commandHelp()
+		case "version":
+			commandVersion()
+		default:
+			println("Unknown command:", os.Args[1])
+			commandHelp()
+	}
+}	
