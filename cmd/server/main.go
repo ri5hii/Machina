@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
-	"context"
-	"time"
-	"syscall"
 	"strings"
-	"fmt"
+	"syscall"
+	"time"
 
 	"github.com/ri5hii/Machina/internal/api"
 	"github.com/ri5hii/Machina/internal/engine"
@@ -64,7 +64,7 @@ func setupLogger(cfg Config) *slog.Logger {
 
 func commandHelp() {
 	helpText := `
-Machina: 
+Machina:
 Usage: machina [options]
 
 Options:
@@ -74,20 +74,21 @@ Options:
   --port <port>   Set the server port (default: 8080)
   --log-level <level> Set log level (DEBUG, INFO, WARN, ERROR, DEFAULT)
 `
-	fmt.Println(helpText)	
+	fmt.Println(helpText)
 }
 
 func commandStart(cfg Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	
+
 	logger := setupLogger(cfg)
+	slog.SetDefault(logger)
 	eng := engine.New(logger)
 	srv := api.New(api.Config{
-					Port: cfg.Port,
-					Version: cfg.Version,
-				}, eng, logger)
-	
+		Port:    cfg.Port,
+		Version: cfg.Version,
+	}, eng, logger)
+
 	eng.Start()
 	srv.Start()
 
@@ -105,6 +106,13 @@ func commandVersion() {
 	println(cfg.Version)
 }
 
+func commandPort(port string) {
+	cfg := loadConfig()
+	cfg.Port = port
+	logger := setupLogger(cfg)
+	logger.Info("server will start on port", "port", cfg.Port)	
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		commandHelp()
@@ -112,41 +120,55 @@ func main() {
 	}
 
 	switch os.Args[1] {
-		case "start":
-			cfg := loadConfig()
-			args := os.Args[2:]
-			for i := 0; i < len(args); i++ {
-				switch args[i] {
-					case "--port":
-						if i+1 < len(args) {
-							cfg.Port = args[i+1]
-							fmt.Println("Port set to", cfg.Port)
-							i++
-						} else {
-							fmt.Println("Error: --port flag requires a value")
-							return
-						}
-					case "--log-level":
-						if i+1 < len(args) {
-							cfg.LogLevel = args[i+1]
-							i++
-						} else {
-							fmt.Println("Error: --log-level flag requires a value")
-							return
-						}
-					default:
-						fmt.Println("Unknown option:", args[i])
-						commandHelp()
-						return
+	case "start":
+		cfg := loadConfig()
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--port":
+				if i+1 < len(args) {
+					cfg.Port = args[i+1]
+					i++
+				} else {
+					fmt.Println("Error: --port flag requires a value")
+					return
 				}
+			case "--log-level":
+				if i+1 < len(args) {
+					cfg.LogLevel = args[i+1]
+					i++
+				} else {
+					fmt.Println("Error: --log-level flag requires a value")
+					return
+				}
+			default:
+				fmt.Println("Unknown option:", args[i])
+				commandHelp()
+				return
 			}
+<<<<<<< Updated upstream
 			commandStart(cfg)
 		case "help":
 			commandHelp()
 		case "version":
 			commandVersion()
 		default:
+			if os.Args[1] == "--port" && len(os.Args) >= 3 {
+				commandPort(os.Args[2])
+				return
+			}
 			println("Unknown command:", os.Args[1])
 			commandHelp()
+=======
+		}
+		commandStart(cfg)
+	case "help":
+		commandHelp()
+	case "version":
+		commandVersion()
+	default:
+		println("Unknown command:", os.Args[1])
+		commandHelp()
+>>>>>>> Stashed changes
 	}
-}	
+}
