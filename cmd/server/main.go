@@ -6,18 +6,22 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/ri5hii/Machina/internal/api"
 	"github.com/ri5hii/Machina/internal/engine"
+	"github.com/ri5hii/Machina/internal/storage"
 )
 
 type Config struct {
-	Port     string
-	Version  string
-	LogLevel string
+	Port        string
+	Version     string
+	LogLevel    string
+	WorkerCount int
+	QueueSize   int
 }
 
 func loadConfig() Config {
@@ -31,13 +35,29 @@ func loadConfig() Config {
 	}
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
-		logLevel = "DEFAULT"
+		logLevel = "INFO"
+	}
+
+	workerCount := 4
+	if v := os.Getenv("WORKER_COUNT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			workerCount = n
+		}
+	}
+
+	queueSize := 100
+	if v := os.Getenv("QUEUE_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			queueSize = n
+		}
 	}
 
 	return Config{
-		Port:     port,
-		Version:  version,
-		LogLevel: logLevel,
+		Port:        port,
+		Version:     version,
+		LogLevel:    logLevel,
+		WorkerCount: workerCount,
+		QueueSize:   queueSize,
 	}
 }
 
@@ -58,7 +78,6 @@ func setupLogger(cfg Config) *slog.Logger {
 	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
 	})
-
 	return slog.New(handler)
 }
 
@@ -68,11 +87,11 @@ Machina:
 Usage: machina [options]
 
 Options:
-  start			Start the server
-  help          Show this help message
-  version       Show version information
-  --port <port>   Set the server port (default: 8080)
-  --log-level <level> Set log level (DEBUG, INFO, WARN, ERROR, DEFAULT)
+  start                       Start the server
+  help                        Show this help message
+  version                     Show version information
+  --port <port>               Set the server port (default: 8080)
+  --log-level <level>         Set log level (DEBUG, INFO, WARN, ERROR)
 `
 	fmt.Println(helpText)
 }
@@ -82,35 +101,29 @@ func commandStart(cfg Config) {
 	defer stop()
 
 	logger := setupLogger(cfg)
-	slog.SetDefault(logger)
-	eng := engine.New(logger)
+	store := storage.New()
+	eng := engine.New(logger, store, cfg.WorkerCount, cfg.QueueSize)
 	srv := api.New(api.Config{
 		Port:    cfg.Port,
 		Version: cfg.Version,
-	}, eng, logger)
+	}, eng, store, logger)
 
-	eng.Start()
+	eng.Start(ctx)
 	srv.Start()
 
 	<-ctx.Done()
-	logger.Info("shutting down server and engine")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	logger.Info("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", "error", err)
 	}
 	eng.Shutdown()
 }
+
 func commandVersion() {
 	cfg := loadConfig()
-	println(cfg.Version)
-}
-
-func commandPort(port string) {
-	cfg := loadConfig()
-	cfg.Port = port
-	logger := setupLogger(cfg)
-	logger.Info("server will start on port", "port", cfg.Port)	
+	fmt.Println(cfg.Version)
 }
 
 func main() {
@@ -146,20 +159,6 @@ func main() {
 				commandHelp()
 				return
 			}
-<<<<<<< Updated upstream
-			commandStart(cfg)
-		case "help":
-			commandHelp()
-		case "version":
-			commandVersion()
-		default:
-			if os.Args[1] == "--port" && len(os.Args) >= 3 {
-				commandPort(os.Args[2])
-				return
-			}
-			println("Unknown command:", os.Args[1])
-			commandHelp()
-=======
 		}
 		commandStart(cfg)
 	case "help":
@@ -167,8 +166,7 @@ func main() {
 	case "version":
 		commandVersion()
 	default:
-		println("Unknown command:", os.Args[1])
+		fmt.Println("Unknown command:", os.Args[1])
 		commandHelp()
->>>>>>> Stashed changes
 	}
 }
