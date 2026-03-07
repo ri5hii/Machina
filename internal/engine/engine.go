@@ -57,7 +57,7 @@ func (eng *Engine) Shutdown() {
 	eng.logger.Info("engine stopped", "status", Shutdown)
 }
 
-func (eng *Engine) SubmitJob(job jobs.Job) (string, error) {
+func (eng *Engine) SubmitJob(job jobs.Runnable) (string, error) {
 	if eng.StatusInfo() != Running {
 		eng.logger.Warn("engine is not running", "status", eng.StatusInfo())
 		return "", fmt.Errorf("engine is not running")

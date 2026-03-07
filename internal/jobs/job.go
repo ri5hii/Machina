@@ -1,23 +1,23 @@
 package jobs
 
-import (
-	"context"
-)
+import "context"
 
 type Job interface {
 	Run(ctx context.Context) (any, error)
 }
 
-type Submission struct {
-	ID string
-	Job Job
-}
-
-type Item any
-
 type BatchProcessingJob interface {
-	Job
 	Scan() ([]Item, error)
+	ChunkSize() int
 	RunBatch(ctx context.Context, batch []Item) (any, error)
 	Aggregate(results []any) (any, error)
 }
+
+type Runnable interface{}
+
+type Submission struct {
+	ID  string
+	Job Runnable
+}
+
+type Item any

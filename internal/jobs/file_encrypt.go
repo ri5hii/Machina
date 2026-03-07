@@ -2,22 +2,24 @@ package jobs
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"fmt"
-	"sync"
+	"io"
+	"os"
+	"path/filepath"
 )
 
-// FileEncryptInput defines the user-supplied configuration for this job.
-// The user fills this in at submission time. Machina never reads these fields.
+const DefaultKeyPath = "tests/data/keys/default.key"
+
 type FileEncryptInput struct {
-	FolderPath  string
-	OutputPath  string
-	Algorithm   string
-	KeyPath     string
-	WorkerCount int
+	FolderPath string `json:"folder_path"`
+	OutputPath string `json:"output_path"`
+	Algorithm  string `json:"algorithm"`
+	KeyPath    string `json:"key_path"`
 }
 
-// FileEncryptResult is what the job produces when it completes.
-// Machina stores this as `any` — the user asserts it back to this type on retrieval.
 type FileEncryptResult struct {
 	TotalFiles     int
 	Succeeded      int
@@ -27,45 +29,13 @@ type FileEncryptResult struct {
 	OutputPath     string
 }
 
-// fileEncryptTask is a single unit of internal work — one file to encrypt.
-// This is invisible to Machina. The job manages these internally.
-type fileEncryptTask struct {
-	inputPath  string
-	outputPath string
-	algorithm  string
-	keyPath    string
-}
-
-// fileEncryptTaskResult is the outcome of encrypting one file internally.
-type fileEncryptTaskResult struct {
-	inputPath      string
-	bytesProcessed int64
-	err            error
-}
-
-// FileEncryptJob is a batch processing job that encrypts all files in a folder.
-//
-// From Machina's perspective this is just a Job — it has Run, Validate,
-// MaxRetries, and JobType. Machina calls Run(ctx) and waits for the result.
-//
-// Internally, Run fans out across WorkerCount goroutines to encrypt files
-// concurrently. Machina never sees those goroutines.
-//
-// Each goroutine respects ctx.Done() — if Machina cancels the job,
-// all internal goroutines stop at their next checkpoint.
 type FileEncryptJob struct {
 	Input FileEncryptInput
+	key   []byte
 }
 
-// JobType identifies this job type in logs, metrics, and the registry.
-// Satisfies the Describable optional interface.
-func (j *FileEncryptJob) JobType() string {
-	return "file_encrypt"
-}
+func (j *FileEncryptJob) JobType() string { return "file_encrypt" }
 
-// Validate checks that the job's inputs are valid before it is queued.
-// Machina calls this before enqueuing — a validation failure never reaches a worker.
-// Satisfies the Validatable optional interface.
 func (j *FileEncryptJob) Validate() error {
 	if j.Input.FolderPath == "" {
 		return fmt.Errorf("file_encrypt: FolderPath is required")
@@ -74,190 +44,135 @@ func (j *FileEncryptJob) Validate() error {
 		return fmt.Errorf("file_encrypt: OutputPath is required")
 	}
 	if j.Input.KeyPath == "" {
-		return fmt.Errorf("file_encrypt: KeyPath is required — encryption requires a key")
+		j.Input.KeyPath = DefaultKeyPath
 	}
 	if j.Input.Algorithm == "" {
-		j.Input.Algorithm = "AES-256-GCM" // sensible default
-	}
-	if j.Input.WorkerCount <= 0 {
-		j.Input.WorkerCount = 4 // sensible default
+		j.Input.Algorithm = "AES-256-GCM"
 	}
 	return nil
 }
 
-// MaxRetries defines how many times Machina should retry this job on failure.
-// Encryption failures are typically due to bad keys or corrupt files — not transient.
-// We allow one retry in case of a transient I/O error during folder scanning.
-// Satisfies the Retryable optional interface.
-func (j *FileEncryptJob) MaxRetries() int {
-	return 1
-}
+func (j *FileEncryptJob) MaxRetries() int { return 1 }
 
-// Run executes the batch file encryption operation.
-//
-// This is the only method Machina calls. From Machina's perspective:
-//   - Run starts
-//   - Run returns (Result, error)
-//
-// Internally, Run:
-//  1. Scans the input folder for files
-//  2. Builds a task list — one task per file
-//  3. Distributes tasks across WorkerCount goroutines via a task channel
-//  4. Each goroutine encrypts files until the channel is drained or ctx is cancelled
-//  5. Results are collected and aggregated into a single FileEncryptResult
-//
-// Every goroutine checks ctx.Done(). If Machina cancels the job,
-// all internal goroutines stop at their next checkpoint.
-func (j *FileEncryptJob) Run(ctx context.Context) (any, error) {
-	// Step 1: discover all files in the input folder.
-	// In a real implementation this would use os.ReadDir.
-	// Here we simulate it to keep the job focused on the concurrency pattern.
+func (j *FileEncryptJob) ChunkSize() int { return 3 }
+
+func (j *FileEncryptJob) Scan() ([]Item, error) {
+	if err := os.MkdirAll(j.Input.OutputPath, 0755); err != nil {
+		return nil, fmt.Errorf("file_encrypt: failed to create output directory %q: %w", j.Input.OutputPath, err)
+	}
+
+	key, err := loadKey(j.Input.KeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("file_encrypt: failed to load key %q: %w", j.Input.KeyPath, err)
+	}
+	j.key = key
+
 	files, err := discoverFiles(j.Input.FolderPath)
 	if err != nil {
 		return nil, fmt.Errorf("file_encrypt: failed to scan folder %q: %w", j.Input.FolderPath, err)
 	}
 
-	if len(files) == 0 {
-		return FileEncryptResult{
-			TotalFiles: 0,
-			OutputPath: j.Input.OutputPath,
-		}, nil
+	items := make([]Item, len(files))
+	for i, f := range files {
+		items[i] = f
 	}
+	return items, nil
+}
 
-	// Step 2: build the task list — one task per file.
-	tasks := make([]fileEncryptTask, len(files))
-	for i, filePath := range files {
-		tasks[i] = fileEncryptTask{
-			inputPath:  filePath,
-			outputPath: j.Input.OutputPath,
-			algorithm:  j.Input.Algorithm,
-			keyPath:    j.Input.KeyPath,
-		}
-	}
-
-	// Step 3: fan out across WorkerCount goroutines.
-	//
-	// taskCh is the internal work queue. The main goroutine feeds tasks into it.
-	// Worker goroutines drain it. When taskCh is closed and drained, workers exit.
-	taskCh := make(chan fileEncryptTask, len(tasks))
-	resultCh := make(chan fileEncryptTaskResult, len(tasks))
-
-	// Feed all tasks into the channel upfront, then close it.
-	// Workers range over taskCh and stop naturally when it is drained.
-	for _, task := range tasks {
-		taskCh <- task
-	}
-	close(taskCh)
-
-	// Step 4: start WorkerCount goroutines.
-	// Each goroutine:
-	//   - ranges over taskCh until it is drained
-	//   - checks ctx.Done() before processing each file
-	//   - sends its outcome to resultCh
-	var wg sync.WaitGroup
-	for i := 0; i < j.Input.WorkerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for task := range taskCh {
-				// Cooperative cancellation check.
-				// If Machina cancelled this job, stop immediately.
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-
-				bytesProcessed, err := encryptFile(ctx, task)
-				resultCh <- fileEncryptTaskResult{
-					inputPath:      task.inputPath,
-					bytesProcessed: bytesProcessed,
-					err:            err,
-				}
-			}
-		}()
-	}
-
-	// Close resultCh once all workers have finished.
-	// This allows the result collection loop below to terminate naturally.
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	// Step 5: collect and aggregate results.
+func (j *FileEncryptJob) RunBatch(ctx context.Context, batch []Item) (any, error) {
 	result := FileEncryptResult{
-		TotalFiles: len(tasks),
+		TotalFiles: len(batch),
 		OutputPath: j.Input.OutputPath,
 	}
 
-	for r := range resultCh {
-		if r.err != nil {
+	for _, item := range batch {
+		if ctx.Err() != nil {
+			return result, fmt.Errorf("file_encrypt: cancelled after processing %d/%d files: %w",
+				result.Succeeded+result.Failed, result.TotalFiles, ctx.Err())
+		}
+
+		filePath := item.(string)
+		n, err := encryptFile(ctx, filePath, j.Input.OutputPath, j.key)
+		if err != nil {
 			result.Failed++
-			result.FailedFiles = append(result.FailedFiles, r.inputPath)
+			result.FailedFiles = append(result.FailedFiles, filePath)
 		} else {
 			result.Succeeded++
-			result.BytesProcessed += r.bytesProcessed
+			result.BytesProcessed += n
 		}
-	}
-
-	// If the context was cancelled, surface that as the error.
-	// The partial result is still returned so the caller can see what completed.
-	if ctx.Err() != nil {
-		return result, fmt.Errorf("file_encrypt: cancelled after processing %d/%d files: %w",
-			result.Succeeded+result.Failed, result.TotalFiles, ctx.Err())
 	}
 
 	return result, nil
 }
 
-// ---------------------------------------------------------------------------
-// Stub implementations
-//
-// These stand in for real I/O operations. In a production implementation:
-//   - discoverFiles would use os.ReadDir
-//   - encryptFile would use crypto/aes + crypto/cipher for AES-256-GCM
-//     or call out to an encryption library
-//
-// They are kept as stubs so the job compiles and the concurrency pattern
-// is fully readable without external dependencies.
-// ---------------------------------------------------------------------------
-
-// discoverFiles scans a folder and returns the paths of all files.
-// Stub: returns simulated file paths for demonstration.
-func discoverFiles(folderPath string) ([]string, error) {
-	if folderPath == "" {
-		return nil, fmt.Errorf("folder path is empty")
+func (j *FileEncryptJob) Aggregate(partials []any) (any, error) {
+	final := FileEncryptResult{OutputPath: j.Input.OutputPath}
+	for _, p := range partials {
+		r := p.(FileEncryptResult)
+		final.TotalFiles += r.TotalFiles
+		final.Succeeded += r.Succeeded
+		final.Failed += r.Failed
+		final.BytesProcessed += r.BytesProcessed
+		final.FailedFiles = append(final.FailedFiles, r.FailedFiles...)
 	}
-	// Simulate finding 10 files in the folder.
-	files := make([]string, 10)
-	for i := range files {
-		files[i] = fmt.Sprintf("%s/file_%04d.dat", folderPath, i+1)
+	return final, nil
+}
+
+func discoverFiles(folderPath string) ([]string, error) {
+	entries, err := os.ReadDir(folderPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory %q: %w", folderPath, err)
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			files = append(files, filepath.Join(folderPath, e.Name()))
+		}
 	}
 	return files, nil
 }
 
-// encryptFile performs the encryption operation on a single file.
-// Returns the number of bytes processed and any error encountered.
-// Stub: simulates the operation without real I/O or cryptography.
-func encryptFile(ctx context.Context, task fileEncryptTask) (int64, error) {
-	// In a real implementation:
-	//   plaintext, err := os.ReadFile(task.inputPath)
-	//   key, err := os.ReadFile(task.keyPath)
-	//   ciphertext, err := aesGCMEncrypt(key, plaintext)
-	//   err = os.WriteFile(outputFilePath, ciphertext, 0600)
-	//   return int64(len(plaintext)), err
+func loadKey(keyPath string) ([]byte, error) {
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("key must be exactly 32 bytes for AES-256, got %d", len(key))
+	}
+	return key, nil
+}
 
-	// Check context before doing work.
-	select {
-	case <-ctx.Done():
+func encryptFile(ctx context.Context, inputPath, outputDir string, key []byte) (int64, error) {
+	if ctx.Err() != nil {
 		return 0, ctx.Err()
-	default:
 	}
 
-	// Simulate 1KB of data encrypted per file.
-	const simulatedFileSize int64 = 1024
-	_ = fmt.Sprintf("encrypting %s using %s with key %s → %s",
-		task.inputPath, task.algorithm, task.keyPath, task.outputPath)
-	return simulatedFileSize, nil
+	plaintext, err := os.ReadFile(inputPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read %q: %w", inputPath, err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return 0, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+
+	outPath := filepath.Join(outputDir, filepath.Base(inputPath)+".enc")
+	if err := os.WriteFile(outPath, ciphertext, 0600); err != nil {
+		return 0, fmt.Errorf("failed to write %q: %w", outPath, err)
+	}
+
+	return int64(len(plaintext)), nil
 }
