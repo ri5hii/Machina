@@ -1,0 +1,5 @@
+{
+  "version": "v0.1",
+  "port": 8080,
+  "workerCount": 4
+}
