@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -27,12 +28,18 @@ func New(log *slog.Logger) *Engine {
 	return eng
 }
 
-func (eng *Engine) Start() {
+func (eng *Engine) Start(ctx context.Context) {
 	eng.status.Store(Running)
-	eng.logger.Info("engine started: ", "status: ", Running)
+
+	eng.logger.Info("engine started", "status", Running)
 }
 
 func (eng *Engine) Shutdown() {
 	eng.status.Store(Shutdown)
-	eng.logger.Info("engine stopped: ", "status: ", Shutdown)
+	eng.logger.Info("engine stopped", "status", Shutdown)
+}
+		
+func EngineStatusInfo(eng *Engine) string {
+	engineStatus := eng.status.Load().(string)
+	return engineStatus
 }

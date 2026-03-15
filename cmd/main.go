@@ -3,16 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"strconv"
-)
 
-type Config struct {
-	Version     string `json:"version"`
-	Port        int    `json:"port"`
-	WorkerCount int    `json:"workerCount"`
-}
+	"context"
+	"log/slog"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/ri5hii/Machina/internal/api"
+	"github.com/ri5hii/Machina/internal/engine"
+	"os/signal"
+	"strconv"
+	"syscall"
+)
 
 func main() {
 	args := os.Args[1:]
@@ -24,6 +27,7 @@ func main() {
 
 	switch args[0] {
 	case "start", "s":
+		slog.Info("Starting the application")
 		commandStart()
 		return
 	case "help", "h":
@@ -39,6 +43,8 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "health":
+		commandHealth()
 	case "version", "v":
 
 	default:
@@ -46,7 +52,6 @@ func main() {
 		commandHelp(args)
 		os.Exit(1)
 	}
-	slog.Info("Starting the application")
 }
 
 func commandHelp(args []string) {
@@ -120,6 +125,22 @@ func commandDescription() {
 
 func commandConfig(args []string) error {
 	configArgs := args[1:]
+	if len(configArgs) == 0 {
+		data, err := os.ReadFile("config.json")
+		if err != nil {
+			return fmt.Errorf("Config file is missing")
+		}
+		var config api.Config
+
+		err = json.Unmarshal(data, &config)
+		if err != nil {
+			return fmt.Errorf("invalid config file")
+		}
+		fmt.Println("Version:", config.Version)
+		fmt.Println("Port:", config.Port)
+		fmt.Println("Worker count:", config.WorkerCount)
+
+	}
 	if len(configArgs)%2 != 0 {
 		return fmt.Errorf("Not enough arguments")
 	}
@@ -128,9 +149,9 @@ func commandConfig(args []string) error {
 	if err != nil {
 		return fmt.Errorf("Config file is missing")
 	}
-	var config Config
+	var config api.Config
 	err = json.Unmarshal(data, &config)
-	if err := json.Unmarshal(data, &config); err != nil {
+	if err != nil {
 		return fmt.Errorf("invalid config file")
 	}
 
@@ -187,11 +208,67 @@ func commandConfig(args []string) error {
 	return nil
 }
 
-func commandStart() {
+func commandStart() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
+	data, err := os.ReadFile("config.json")
+	if err != nil {
+		return fmt.Errorf("Config file is missing")
+	}
+	var config api.Config
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return fmt.Errorf("invalid config file")
+	}
+
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	eng := engine.New(log)
+	server := api.New(config, eng, log)
+
+	eng.Start(ctx)
+	server.Start()
+
+	<-ctx.Done()
+	fmt.Println("\nshutting down…")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = server.Shutdown(shutdownCtx)
+	if err != nil {
+		return fmt.Errorf("server shutdown error: %e", err)
+	}
+	eng.Shutdown()
+	return nil
 }
 
-func writeConfigJSON(config Config) error {
+func commandHealth() error {
+	data, err := os.ReadFile("config.json")
+	if err != nil {
+		return fmt.Errorf("Config file is missing")
+	}
+	var config api.Config
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return fmt.Errorf("invalid config file")
+	}
+	url := "http://localhost:" + strconv.Itoa(config.Port) + "/health"
+	response, statusCode, err := api.HttpGET(url)
+	if err != nil {
+		fmt.Println(fmt.Errorf("Couldn't reach server: %v", err))
+		return fmt.Errorf("Couldn't reach server: %v", err)
+	}
+	if statusCode != http.StatusOK {
+		fmt.Println(fmt.Errorf("server returned %d\n", statusCode))
+		return fmt.Errorf("server returned %d\n", statusCode)
+	}
+	var health map[string]any
+	json.Unmarshal(response, &health)
+	printJSON(health)
+	return nil
+}
+
+func writeConfigJSON(config api.Config) error {
 	updated, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
@@ -202,4 +279,10 @@ func writeConfigJSON(config Config) error {
 		return err
 	}
 	return nil
+}
+
+func printJSON(content any) {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(content)
 }
