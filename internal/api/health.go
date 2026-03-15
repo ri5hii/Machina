@@ -3,8 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/ri5hii/Machina/internal/engine"
 )
 
 type response struct {
@@ -16,7 +14,7 @@ type response struct {
 
 func (server *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	serverStatus := server.status.Load().(string)
-	engineStatus := engine.EngineStatusInfo(server.eng)
+	engineStatus := server.eng.EngineStatusInfo()
 	response := response{
 		ServerStatus: serverStatus,
 		EngineStatus: engineStatus,

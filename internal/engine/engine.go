@@ -39,7 +39,7 @@ func (eng *Engine) Shutdown() {
 	eng.logger.Info("engine stopped", "status", Shutdown)
 }
 		
-func EngineStatusInfo(eng *Engine) string {
+func (eng *Engine) EngineStatusInfo() string {
 	engineStatus := eng.status.Load().(string)
 	return engineStatus
 }

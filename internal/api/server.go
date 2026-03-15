@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -37,9 +36,8 @@ type Server struct {
 }
 
 func New(config Config, eng *engine.Engine, log *slog.Logger) *Server {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	server := &Server{
-		logger:  logger,
+		logger:  log,
 		eng:     eng,
 		version: config.Version,
 	}
