@@ -8,8 +8,8 @@ import (
 type response struct {
 	ServerStatus string `json:"server-status"`
 	EngineStatus string `json:"engine-status"`
-	Port         string       `json:"port"`
-	Version      string       `json:"version"`
+	Port         string `json:"port"`
+	Version      string `json:"version"`
 }
 
 func (server *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
