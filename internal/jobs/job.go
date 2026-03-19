@@ -6,12 +6,12 @@ import (
 
 type JobSubmission struct {
 	JobID string
-	Job   JobType
+	Job   JobRunType
 }
 
 type Item any
 
-type JobType interface{}
+type JobRunType interface{}
 
 type BatchProcessingJob interface {
 	Scan() ([]Item, error)
