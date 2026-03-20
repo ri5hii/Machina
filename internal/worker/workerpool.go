@@ -89,9 +89,9 @@ func (pool *WorkerPool) SafeExecute(ctx context.Context, submission jobs.JobSubm
 
 	switch JobType := submission.Job.(type) {
 	case jobs.BatchProcessingJob:
-		return executeBatch(ctx, JobType, submission.JobID, pool.logger) 
+		return executeBatch(ctx, JobType, submission.JobID, pool.logger)
 	case jobs.ParallelProcessingJob:
-		return JobType.Run(ctx) 
+		return JobType.Run(ctx)
 	default:
 		return nil, fmt.Errorf("job %q is not implemented in any job profile", JobType)
 	}
@@ -102,11 +102,11 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 	if err != nil {
 		return nil, fmt.Errorf("batch scan failed: %w", err)
 	}
-	
+
 	if len(items) == 0 {
 		return job.Aggregate(nil)
 	}
-	
+
 	chunks := partition(items, job.ChunkSize())
 	logger.Info("batch dispatching chunks",
 		"jobID", jobID,
@@ -114,13 +114,13 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 		"chunkSize", job.ChunkSize(),
 		"totalChunks", len(chunks),
 	)
-	
+
 	partials := make([]any, len(chunks))
-	
+
 	errGroup, errGroupCtx := errgroup.WithContext(ctx)
-	
+
 	BatchStartTime := time.Now()
-	
+
 	for i := 0; i < len(chunks); i++ {
 		chunk := chunks[i]
 		errGroup.Go(func() error {
@@ -131,14 +131,14 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 				"items", len(chunk),
 				"time", chunkStartTime,
 			)
-			
+
 			partial, err := job.RunBatch(errGroupCtx, chunk)
 			if err != nil {
 				return fmt.Errorf("chunk %d failed: %w", i, err)
 			}
-			
+
 			partials[i] = partial
-			
+
 			logger.Info("chunk done",
 				"jobID", jobID,
 				"chunk", i,
@@ -146,26 +146,26 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 				"duration", time.Since(chunkStartTime).Round(time.Microsecond).String(),
 			)
 			return nil
-		})	
+		})
 	}
-	
+
 	err = errGroup.Wait()
 	if err != nil {
 		return nil, fmt.Errorf("batch run failed: %w", err)
 	}
-	
+
 	logger.Info("batch done",
 		"jobID", jobID,
 		"total items", len(items),
 		"total chunks", len(chunks),
 		"duration", time.Since(BatchStartTime).Round(time.Microsecond).String(),
 	)
-	
+
 	result, err := job.Aggregate(partials)
 	if err != nil {
 		return nil, fmt.Errorf("batch aggregate failed: %w", err)
 	}
-	
+
 	return result, nil
 }
 
@@ -173,7 +173,7 @@ func partition(items []jobs.Item, chunkSize int) [][]jobs.Item {
 	if chunkSize <= 0 {
 		return [][]jobs.Item{items}
 	}
-	
+
 	var chunks [][]jobs.Item
 	for chunkSize < len(items) {
 		items, chunks = items[chunkSize:], append(chunks, items[:chunkSize])
