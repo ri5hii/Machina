@@ -10,11 +10,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/ri5hii/Machina/internal/api"
-	"github.com/ri5hii/Machina/internal/engine"
 	"os/signal"
 	"strconv"
 	"syscall"
+
+	"github.com/ri5hii/Machina/internal/api"
+	"github.com/ri5hii/Machina/internal/engine"
+	"github.com/ri5hii/Machina/internal/jobs"
+	"github.com/ri5hii/Machina/internal/registry"
+	"github.com/ri5hii/Machina/internal/storage"
 )
 
 func main() {
@@ -28,7 +32,10 @@ func main() {
 	switch args[0] {
 	case "start", "s":
 		slog.Info("Starting the application")
-		commandStart()
+		err := commandStart()
+		if err != nil {
+			fmt.Printf("Error starting the application: %e", err)
+		}
 		return
 	case "help", "h":
 		commandHelp(args)
@@ -44,7 +51,10 @@ func main() {
 		}
 		return
 	case "health":
-		commandHealth()
+		err := commandHealth()
+		if err != nil {
+			fmt.Printf("Error connecting to server: %v", err)
+		}
 	case "version", "v":
 
 	default:
@@ -139,6 +149,7 @@ func commandConfig(args []string) error {
 		fmt.Println("Version:", config.Version)
 		fmt.Println("Port:", config.Port)
 		fmt.Println("Worker count:", config.WorkerCount)
+		fmt.Println("Queue size:", config.QueueSize)
 
 	}
 	if len(configArgs)%2 != 0 {
@@ -186,6 +197,20 @@ func commandConfig(args []string) error {
 			config.WorkerCount = workerCount
 			fmt.Printf("Worker count set to: %d\n", workerCount)
 			updated = true
+		case "--queueSize":
+			QueueSize, err := strconv.Atoi(configArgs[i+1])
+			if err != nil {
+				errors = append(errors, fmt.Errorf("Invalid queue size: %s (must be a number)", configArgs[i+1]))
+				continue
+			}
+			if QueueSize < 4 || QueueSize > 100 {
+				errors = append(errors, fmt.Errorf("Queue size can't be set to: %d (must be between 4 and 100)", QueueSize))
+				continue
+			}
+			config.QueueSize = QueueSize
+			fmt.Printf("Queue size set to: %d\n", QueueSize)
+			updated = true
+
 		default:
 			errors = append(errors, fmt.Errorf("invalid config flag: %s", configArgs[i]))
 			continue
@@ -223,20 +248,24 @@ func commandStart() error {
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	eng := engine.New(log)
-	server := api.New(config, eng, log)
+	store := storage.NewStore()
+	queue := make(chan jobs.JobSubmission, config.QueueSize)
+	eng := engine.New(log, queue, store, config.WorkerCount)
+	reg := registry.New()
+	reg.RegisterJob()
+	server := api.New(config, eng, log, reg)
 
 	eng.Start(ctx)
 	server.Start()
 
 	<-ctx.Done()
-	fmt.Println("\nshutting down…")
+	fmt.Println("Shutting down…")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	err = server.Shutdown(shutdownCtx)
 	if err != nil {
-		return fmt.Errorf("server shutdown error: %e", err)
+		return fmt.Errorf("Server shutdown error: %w", err)
 	}
 	eng.Shutdown()
 	return nil
@@ -250,7 +279,7 @@ func commandHealth() error {
 	var config api.Config
 	err = json.Unmarshal(data, &config)
 	if err != nil {
-		return fmt.Errorf("invalid config file")
+		return fmt.Errorf("Invalid config file")
 	}
 	url := "http://localhost:" + strconv.Itoa(config.Port) + "/health"
 	response, statusCode, err := api.HttpGET(url)
@@ -259,8 +288,8 @@ func commandHealth() error {
 		return fmt.Errorf("Couldn't reach server: %v", err)
 	}
 	if statusCode != http.StatusOK {
-		fmt.Println(fmt.Errorf("server returned %d\n", statusCode))
-		return fmt.Errorf("server returned %d\n", statusCode)
+		fmt.Println(fmt.Errorf("Server returned %d\n", statusCode))
+		return fmt.Errorf("Server returned %d\n", statusCode)
 	}
 	var health map[string]any
 	json.Unmarshal(response, &health)

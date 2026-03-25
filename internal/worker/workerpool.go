@@ -137,7 +137,7 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 				return fmt.Errorf("Chunk %d failed: %w", x, err)
 			}
 
-			partials[i] = partial
+			partials[x] = partial
 
 			logger.Info("Chunk done",
 				"JobID", jobID,

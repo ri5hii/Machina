@@ -26,6 +26,7 @@ type Config struct {
 	Version     string `json:"version"`
 	Port        int    `json:"port"`
 	WorkerCount int    `json:"workerCount"`
+	QueueSize   int    `json:"queuesize"`
 }
 
 type Server struct {
@@ -61,8 +62,12 @@ func (server *Server) Handler() http.Handler {
 
 func (server *Server) Start() error {
 	go func() {
+		//handle the err when the server is shutdown, shouldnt log it in that case
 		err := server.http.ListenAndServe()
 		if err != nil {
+			if err == http.ErrServerClosed {
+				return
+			}
 			server.logger.Error("Server error", "Error", err)
 		}
 	}()
