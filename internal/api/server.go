@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ri5hii/Machina/internal/engine"
+	"github.com/ri5hii/Machina/internal/registry"
 )
 
 const (
@@ -28,18 +29,20 @@ type Config struct {
 }
 
 type Server struct {
-	http    *http.Server
-	logger  *slog.Logger
-	eng     *engine.Engine
-	version string
-	status  atomic.Value
+	http     *http.Server
+	logger   *slog.Logger
+	eng      *engine.Engine
+	registry *registry.Registry
+	version  string
+	status   atomic.Value
 }
 
-func New(config Config, eng *engine.Engine, log *slog.Logger) *Server {
+func New(config Config, eng *engine.Engine, log *slog.Logger, reg *registry.Registry) *Server {
 	server := &Server{
-		logger:  log,
-		eng:     eng,
-		version: config.Version,
+		logger:   log,
+		eng:      eng,
+		version:  config.Version,
+		registry: reg,
 	}
 	server.http = &http.Server{
 		Addr:         ":" + strconv.Itoa(config.Port),
@@ -48,6 +51,7 @@ func New(config Config, eng *engine.Engine, log *slog.Logger) *Server {
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  30 * time.Second,
 	}
+	server.status.Store(Initialized)
 	return server
 }
 
@@ -62,8 +66,8 @@ func (server *Server) Start() error {
 			server.logger.Error("Server error", "error:", err)
 		}
 	}()
-	server.logger.Info("server status", "status", Initialized)
-	server.status.Store(Initialized)
+	server.logger.Info("server status", "status", Running)
+	server.status.Store(Running)
 	server.logger.Info("server listening at port", "port", server.http.Addr)
 	return nil
 }

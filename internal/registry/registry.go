@@ -1,6 +1,8 @@
 package registry
 
-import "github.com/ri5hii/Machina/internal/jobs"
+import (
+	"github.com/ri5hii/Machina/internal/jobs"
+)
 
 type PayloadConstructor func(payload map[string]any) (jobs.JobRunType, error)
 
