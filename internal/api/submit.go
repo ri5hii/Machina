@@ -24,35 +24,35 @@ func (s *Server) SubmitHandler(w http.ResponseWriter, r *http.Request) {
 	var req SubmitRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if req.Type == "" {
-		http.Error(w, "field 'type' is required", http.StatusBadRequest)
+		http.Error(w, "Field 'type' is required", http.StatusBadRequest)
 		return
 	}
 
 	ConstructedPayload, ok := s.registry.GetPayloadConstructor(req.Type)
 	if !ok {
-		http.Error(w, "unknown job type: "+req.Type, http.StatusBadRequest)
+		http.Error(w, "Unknown job type: "+req.Type, http.StatusBadRequest)
 		return
 	}
 
 	job, err := ConstructedPayload(req.Payload)
 	if err != nil {
-		http.Error(w, "invalid payload: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid payload: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	id, err := s.eng.SubmitJob(job)
 	if err != nil {
-		s.logger.Error("failed to submit job", "type", req.Type, "error", err)
-		http.Error(w, "service unavailable: "+err.Error(), http.StatusServiceUnavailable)
+		s.logger.Error("Failed to submit job", "Type", req.Type, "error", err)
+		http.Error(w, "Service unavailable: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
-	s.logger.Info("job submitted", "id", id, "type", req.Type)
+	s.logger.Info("Job submitted", "id", id, "type", req.Type)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

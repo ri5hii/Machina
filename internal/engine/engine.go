@@ -44,23 +44,23 @@ func (eng *Engine) Start(ctx context.Context) {
 	eng.status.Store(Running)
 	eng.workerPool.Start(ctx)
 
-	eng.logger.Info("engine started", "status", Running)
+	eng.logger.Info("Engine started", "Status", Running)
 }
 
 func (eng *Engine) Shutdown() {
-	eng.status.Store(Shutdown)
-	eng.logger.Info("shutting down engine", "status", Shutdown)
+	eng.logger.Info("Shutting down engine", "Status", Shutdown)
 	eng.closeOnce.Do(func() {
 		close(eng.queue)
 	})
 	eng.workerPool.Wait()
-	eng.logger.Info("engine stopped", "status", Shutdown)
+	eng.status.Store(Shutdown)
+	eng.logger.Info("Engine stopped", "Status", Shutdown)
 }
 
 func (eng *Engine) SubmitJob(job jobs.JobRunType) (string, error) {
 	if eng.EngineStatusInfo() != Running {
-		eng.logger.Warn("engine is not running", "status", eng.EngineStatusInfo())
-		return "", fmt.Errorf("engine is not running")
+		eng.logger.Warn("Engine is not running", "Status", eng.EngineStatusInfo())
+		return "", fmt.Errorf("Engine is not running")
 	}
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -68,12 +68,12 @@ func (eng *Engine) SubmitJob(job jobs.JobRunType) (string, error) {
 
 	select {
 	case eng.queue <- jobs.JobSubmission{JobID: id, Job: job}:
-		eng.logger.Info("job queued", "jobID", id)
+		eng.logger.Info("Job queued", "JobID", id)
 		return id, nil
 	default:
 		eng.store.SetStatus(id, storage.StatusFailed)
-		eng.store.SetError(id, fmt.Errorf("queue is full"))
-		return "", fmt.Errorf("queue is full")
+		eng.store.SetError(id, fmt.Errorf("Queue is full"))
+		return "", fmt.Errorf("Queue is full")
 	}
 }
 

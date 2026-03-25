@@ -19,7 +19,7 @@ func New() *Registry {
 func (reg *Registry) Register(jobType string, payloadConstructor PayloadConstructor) {
 	_, exists := reg.constructors[jobType]
 	if exists {
-		panic("registry: job type already registered: " + jobType)
+		panic("Registry: Job type already registered: " + jobType)
 	}
 	reg.constructors[jobType] = payloadConstructor
 }

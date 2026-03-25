@@ -63,19 +63,19 @@ func (server *Server) Start() error {
 	go func() {
 		err := server.http.ListenAndServe()
 		if err != nil {
-			server.logger.Error("Server error", "error:", err)
+			server.logger.Error("Server error", "Error", err)
 		}
 	}()
-	server.logger.Info("server status", "status", Running)
+	server.logger.Info("Server status", "Status", Running)
 	server.status.Store(Running)
-	server.logger.Info("server listening at port", "port", server.http.Addr)
+	server.logger.Info("Server listening at port", "Port", server.http.Addr)
 	return nil
 }
 
 func (server *Server) Shutdown(ctx context.Context) error {
-	server.logger.Info("server status", "status", Shutdown)
+	server.logger.Info("Server status", "Status", Shutdown)
 	server.status.Store(Shutdown)
-	server.logger.Info("server disconnected from port", "port", server.http.Addr)
+	server.logger.Info("Server disconnected from port", "Port", server.http.Addr)
 	return server.http.Shutdown(ctx)
 }
 
