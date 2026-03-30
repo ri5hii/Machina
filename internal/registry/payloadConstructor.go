@@ -38,7 +38,7 @@ func CSVTransformPayloadConstructor(payload map[string]any) (jobs.JobRunType, er
 	return &jobs.CSVTransformJob{Input: input}, nil
 }
 
-func (reg *Registry) RegisterJob() {
+func (reg *Registry) RegisterJobs() {
 	reg.Register("file_encrypt", EncryptFilePayloadConstructor)
 	reg.Register("csv_transform", CSVTransformPayloadConstructor)
 

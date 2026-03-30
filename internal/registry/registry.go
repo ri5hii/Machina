@@ -31,11 +31,11 @@ func (reg *Registry) GetPayloadConstructor(jobType string) (PayloadConstructor, 
 	return payloadConstructor, exists
 }
 
-func (reg *Registry) Profiles() []string {
-	profiles := make([]string, 0, len(reg.constructors))
+func (reg *Registry) JobTypes() []string {
+	jobTypes := make([]string, 0, len(reg.constructors))
 	for jobType := range reg.constructors {
-		profiles = append(profiles, jobType)
+		jobTypes = append(jobTypes, jobType)
 	}
-	sort.Strings(profiles)
-	return profiles
+	sort.Strings(jobTypes)
+	return jobTypes
 }

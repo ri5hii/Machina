@@ -90,10 +90,10 @@ func (pool *WorkerPool) SafeExecute(ctx context.Context, submission jobs.JobSubm
 	switch JobType := submission.Job.(type) {
 	case jobs.BatchProcessingJob:
 		return executeBatch(ctx, JobType, submission.JobID, pool.logger)
-	case jobs.ParallelProcessingJob:
+	case jobs.SingleRunJob:
 		return JobType.Run(ctx)
 	default:
-		return nil, fmt.Errorf("Job %q is not implemented in any job profile", JobType)
+		return nil, fmt.Errorf("job %q is not implemented by any known job type", JobType)
 	}
 }
 

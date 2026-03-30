@@ -80,6 +80,12 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "types":
+		err := commandTypes(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "profile":
 		err := commandProfile(args)
 		if err != nil {
@@ -123,7 +129,8 @@ func commandHelp(args []string) {
 	  list                               List all jobs
 	  register                           Create and register a new job
 	  unregister                         Remove a registered job
-	  profile							 List of job Profiles available
+	  profile                            List available job scaffolding profiles
+	  types                              List registered job types
 	  config                             View/Change config values
 	  version                            Print version
 	  help 			                     Show help for a command
@@ -211,11 +218,11 @@ func commandHelp(args []string) {
 
 	Profiles:
 	  batch       BatchProcessingJob scaffold
-	  parallel    ParallelProcessingJob scaffold
+	  singleRun   SingleRunJob scaffold
 
 	Examples:
 	  machina register batch image_resize
-	  machina register parallel thumbnail_cleanup`
+	  machina register singleRun thumbnail_cleanup`
 
 	unregisterString := `
 	Usage: machina unregister <job-name>
@@ -231,11 +238,21 @@ func commandHelp(args []string) {
 	Usage: machina profile
 
 	Description:
+	  Print the job scaffolding profiles available to the Machina generator.
+	  The output is a JSON array of profile names.
+
+	Example:
+	  machina profile`
+
+	typesString := `
+	Usage: machina types
+
+	Description:
 	  Print the registered job types available to the Machina runtime.
 	  The output is a JSON array of registered job type names.
 
 	Example:
-	  machina profile`
+	  machina types`
 
 	configString := `
 	Usage: machina config [flags]
@@ -266,6 +283,8 @@ func commandHelp(args []string) {
 			fmt.Print(unregisterString)
 		case "profile":
 			fmt.Print(profileString)
+		case "types":
+			fmt.Print(typesString)
 		case "config":
 			fmt.Print(configString)
 		default:
@@ -430,7 +449,7 @@ func commandStart(args []string) error {
 	queue := make(chan jobs.JobSubmission, config.QueueSize)
 	eng := engine.New(log, queue, store, config.WorkerCount)
 	reg := registry.New()
-	reg.RegisterJob()
+	reg.RegisterJobs()
 	server := api.New(config, eng, store, log, reg)
 
 	eng.Start(ctx)
@@ -705,11 +724,20 @@ func commandProfile(args []string) error {
 		return fmt.Errorf("profile does not accept flags")
 	}
 
-	profiles, err := registeredJobTypes()
+	printJSON([]string{"batch", "singleRun"})
+	return nil
+}
+
+func commandTypes(args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("types does not accept flags")
+	}
+
+	jobTypes, err := registeredJobTypes()
 	if err != nil {
 		return err
 	}
-	printJSON(profiles)
+	printJSON(jobTypes)
 	return nil
 }
 
@@ -724,8 +752,11 @@ func commandRegister(args []string) error {
 		return fmt.Errorf("invalid job name: %q", args[2])
 	}
 
-	if profile != "batch" && profile != "parallel" {
-		return fmt.Errorf("unknown profile %q; valid profiles: batch, parallel", profile)
+	if profile != "batch" && profile != "singlerun" {
+		return fmt.Errorf("unknown profile %q; valid profiles: batch, singleRun", profile)
+	}
+	if profile == "singlerun" {
+		profile = "singleRun"
 	}
 
 	profiles, err := registeredJobTypes()
@@ -817,7 +848,7 @@ func commandUnregister(args []string) error {
 		return fmt.Errorf("job %q is not registered", jobName)
 	}
 
-	spec := newJobSpec("parallel", jobName)
+	spec := newJobSpec("singleRun", jobName)
 	if err := removeRegistryConstructor(spec); err != nil {
 		return err
 	}

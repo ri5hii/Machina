@@ -65,7 +65,7 @@ func %s(payload map[string]any) (jobs.JobRunType, error) {
 `, spec.ConstructorName, spec.JobType, spec.InputTypeName, spec.JobType, spec.TypeName)
 
 	registerLine := fmt.Sprintf("\n\treg.Register(%q, %s)", spec.JobType, spec.ConstructorName)
-	oldRegisterBlock := "func (reg *Registry) RegisterJob() {"
+	oldRegisterBlock := "func (reg *Registry) RegisterJobs() {"
 	start := strings.Index(string(content), oldRegisterBlock)
 	if start == -1 {
 		return fmt.Errorf("failed to locate RegisterJob function in registry")

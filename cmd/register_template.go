@@ -68,7 +68,7 @@ func toPascalCase(name string) string {
 }
 
 func buildJobTemplate(spec jobSpec) string {
-	if spec.Profile == "parallel" {
+	if spec.Profile == "singleRun" {
 		return buildParallelTemplate(spec)
 	}
 	return buildBatchTemplate(spec)
