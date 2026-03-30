@@ -7,6 +7,7 @@ import (
 	"github.com/ri5hii/Machina/internal/jobs"
 )
 
+// EncryptFilePayloadConstructor converts a raw API payload into a FileEncryptJob.
 func EncryptFilePayloadConstructor(payload map[string]any) (jobs.JobRunType, error) {
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -23,6 +24,7 @@ func EncryptFilePayloadConstructor(payload map[string]any) (jobs.JobRunType, err
 
 }
 
+// CSVTransformPayloadConstructor converts a raw API payload into a CSVTransformJob.
 func CSVTransformPayloadConstructor(payload map[string]any) (jobs.JobRunType, error) {
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -38,7 +40,9 @@ func CSVTransformPayloadConstructor(payload map[string]any) (jobs.JobRunType, er
 	return &jobs.CSVTransformJob{Input: input}, nil
 }
 
-func (reg *Registry) RegisterJob() {
+// RegisterJobs registers the built-in runtime job types.
+
+func (reg *Registry) RegisterJobs() {
 	reg.Register("file_encrypt", EncryptFilePayloadConstructor)
 	reg.Register("csv_transform", CSVTransformPayloadConstructor)
 

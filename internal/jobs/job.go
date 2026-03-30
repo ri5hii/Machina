@@ -20,6 +20,6 @@ type BatchProcessingJob interface {
 	Aggregate(results []any) (any, error)
 }
 
-type ParallelProcessingJob interface {
+type SingleRunJob interface {
 	Run(ctx context.Context) (any, error)
 }

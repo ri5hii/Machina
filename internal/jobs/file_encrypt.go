@@ -34,8 +34,10 @@ type FileEncryptJob struct {
 	key   []byte
 }
 
+// JobType reports the runtime registry key for this job.
 func (j *FileEncryptJob) JobType() string { return "file_encrypt" }
 
+// Validate checks the file encryption input before execution starts.
 func (j *FileEncryptJob) Validate() error {
 	if j.Input.FolderPath == "" {
 		return fmt.Errorf("file_encrypt: folder_path is required")
@@ -55,10 +57,13 @@ func (j *FileEncryptJob) Validate() error {
 	return nil
 }
 
+// MaxRetries reports the retry policy for this job type.
 func (j *FileEncryptJob) MaxRetries() int { return 1 }
 
+// ChunkSize controls how many files are processed per batch.
 func (j *FileEncryptJob) ChunkSize() int { return 3 }
 
+// Scan discovers input files and turns them into batch work items.
 func (j *FileEncryptJob) Scan() ([]Item, error) {
 	if j.Input.KeyPath == "" {
 		j.Input.KeyPath = DefaultKeyPath
@@ -89,6 +94,7 @@ func (j *FileEncryptJob) Scan() ([]Item, error) {
 	return items, nil
 }
 
+// RunBatch encrypts one chunk of files into the configured output directory.
 func (j *FileEncryptJob) RunBatch(ctx context.Context, batch []Item) (any, error) {
 	result := FileEncryptResult{
 		TotalFiles: len(batch),
@@ -120,6 +126,7 @@ func (j *FileEncryptJob) RunBatch(ctx context.Context, batch []Item) (any, error
 	return result, nil
 }
 
+// Aggregate combines per-batch byte counts into the final job result.
 func (j *FileEncryptJob) Aggregate(partials []any) (any, error) {
 	final := FileEncryptResult{
 		OutputPath: j.Input.OutputPath,
@@ -137,6 +144,7 @@ func (j *FileEncryptJob) Aggregate(partials []any) (any, error) {
 	return final, nil
 }
 
+// discoverFiles walks the input folder and returns every regular file path.
 func discoverFiles(folderPath string) ([]string, error) {
 	entries, err := os.ReadDir(folderPath)
 	if err != nil {
@@ -153,6 +161,7 @@ func discoverFiles(folderPath string) ([]string, error) {
 	return files, nil
 }
 
+// loadKey reads the AES key material from disk for batch encryption.
 func loadKey(keyPath string) ([]byte, error) {
 	key, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -164,6 +173,7 @@ func loadKey(keyPath string) ([]byte, error) {
 	return key, nil
 }
 
+// encryptFile encrypts one file and writes the ciphertext into the output directory.
 func encryptFile(ctx context.Context, inputPath, outputDir string, key []byte) (int64, error) {
 	if ctx.Err() != nil {
 		return 0, ctx.Err()

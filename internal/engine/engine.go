@@ -29,6 +29,7 @@ type Engine struct {
 	closeOnce  sync.Once
 }
 
+// New assembles an engine with its queue, store, and worker pool dependencies.
 func New(log *slog.Logger, queue chan jobs.JobSubmission, store *storage.JobStore, workerCount int) *Engine {
 	eng := &Engine{
 		logger:     log,
@@ -40,6 +41,7 @@ func New(log *slog.Logger, queue chan jobs.JobSubmission, store *storage.JobStor
 	return eng
 }
 
+// Start marks the engine as running and starts worker consumption.
 func (eng *Engine) Start(ctx context.Context) {
 	eng.status.Store(Running)
 	eng.workerPool.Start(ctx)
@@ -47,6 +49,7 @@ func (eng *Engine) Start(ctx context.Context) {
 	eng.logger.Info("Engine started", "Status", Running)
 }
 
+// Shutdown closes the queue once and waits for workers to finish draining.
 func (eng *Engine) Shutdown() {
 	eng.logger.Info("Shutting down engine", "Status", Shutdown)
 	eng.closeOnce.Do(func() {
@@ -57,6 +60,7 @@ func (eng *Engine) Shutdown() {
 	eng.logger.Info("Engine stopped", "Status", Shutdown)
 }
 
+// SubmitJob stores a pending job and enqueues it without blocking the caller.
 func (eng *Engine) SubmitJob(job jobs.JobRunType) (string, error) {
 	if eng.EngineStatusInfo() != Running {
 		eng.logger.Warn("Engine is not running", "Status", eng.EngineStatusInfo())
@@ -71,12 +75,14 @@ func (eng *Engine) SubmitJob(job jobs.JobRunType) (string, error) {
 		eng.logger.Info("Job queued", "JobID", id)
 		return id, nil
 	default:
+		// Fast failure keeps API latency bounded even when workers are saturated.
 		eng.store.SetStatus(id, storage.StatusFailed)
 		eng.store.SetError(id, fmt.Errorf("Queue is full"))
 		return "", fmt.Errorf("Queue is full")
 	}
 }
 
+// EngineStatusInfo returns the current engine lifecycle state for health and guards.
 func (eng *Engine) EngineStatusInfo() string {
 	engineStatus := eng.status.Load().(string)
 	return engineStatus

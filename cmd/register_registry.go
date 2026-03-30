@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// registeredJobTypes lists job types by reading the source registry file directly.
 func registeredJobTypes() ([]string, error) {
 	registryPath := filepath.Join("internal", "registry", "payloadConstructor.go")
 	content, err := os.ReadFile(registryPath)
@@ -36,6 +37,7 @@ func registeredJobTypes() ([]string, error) {
 	return profiles, nil
 }
 
+// appendRegistryConstructor adds a generated constructor and RegisterJobs entry for a new job.
 func appendRegistryConstructor(spec jobSpec) error {
 	registryPath := filepath.Join("internal", "registry", "payloadConstructor.go")
 	content, err := os.ReadFile(registryPath)
@@ -65,7 +67,8 @@ func %s(payload map[string]any) (jobs.JobRunType, error) {
 `, spec.ConstructorName, spec.JobType, spec.InputTypeName, spec.JobType, spec.TypeName)
 
 	registerLine := fmt.Sprintf("\n\treg.Register(%q, %s)", spec.JobType, spec.ConstructorName)
-	oldRegisterBlock := "func (reg *Registry) RegisterJob() {"
+	// register/unregister edit source directly, so they rely on RegisterJobs keeping this shape.
+	oldRegisterBlock := "func (reg *Registry) RegisterJobs() {"
 	start := strings.Index(string(content), oldRegisterBlock)
 	if start == -1 {
 		return fmt.Errorf("failed to locate RegisterJob function in registry")
@@ -88,6 +91,7 @@ func %s(payload map[string]any) (jobs.JobRunType, error) {
 	return nil
 }
 
+// removeRegistryConstructor removes a generated constructor and its RegisterJobs entry.
 func removeRegistryConstructor(spec jobSpec) error {
 	registryPath := filepath.Join("internal", "registry", "payloadConstructor.go")
 	content, err := os.ReadFile(registryPath)
@@ -120,6 +124,7 @@ func removeRegistryConstructor(spec jobSpec) error {
 	return nil
 }
 
+// findFunctionEnd finds the closing brace for a generated top-level function body.
 func findFunctionEnd(content string, start int) (int, error) {
 	openBrace := strings.Index(content[start:], "{")
 	if openBrace == -1 {
@@ -143,6 +148,7 @@ func findFunctionEnd(content string, start int) (int, error) {
 	return 0, fmt.Errorf("failed to locate end of function body")
 }
 
+// gofmtFiles rewrites generated files into stable gofmt output after source edits.
 func gofmtFiles(paths ...string) error {
 	args := append([]string{"-w"}, paths...)
 	cmd := exec.Command("gofmt", args...)

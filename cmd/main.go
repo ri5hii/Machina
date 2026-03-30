@@ -25,6 +25,7 @@ import (
 	"github.com/ri5hii/Machina/internal/storage"
 )
 
+// main dispatches top-level CLI commands to their handlers.
 func main() {
 	args := os.Args[1:]
 
@@ -36,61 +37,37 @@ func main() {
 	switch args[0] {
 	case "start":
 		slog.Info("Starting the application")
-		err := commandStart(args[1:])
-		if err != nil {
-			fmt.Printf("Error starting the application: %v", err)
-		}
+		failCommand(commandStart(args[1:]))
 		return
 	case "shutdown":
-		err := commandShutdown()
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandShutdown(args[1:]))
 		return
 	case "health":
-		err := commandHealth()
-		if err != nil {
-			fmt.Printf("Error connecting to server: %v", err)
-		}
+		failCommand(commandHealth(args[1:]))
 		return
 	case "submit":
 		commandSubmit(args[1:])
 		return
 	case "status":
-		err := commandStatus(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandStatus(args[1:]))
 		return
 	case "list":
-		err := commandList(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandList(args[1:]))
 		return
 	case "register":
-		err := commandRegister(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandRegister(args[1:]))
 		return
 	case "unregister":
-		err := commandUnregister(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandUnregister(args[1:]))
+		return
+	case "types":
+		failCommand(commandTypes(args[1:]))
 		return
 	case "profile":
-		err := commandProfile(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandProfile(args[1:]))
 		return
 	case "config":
-		err := commandConfig(args)
-		if err != nil {
-			fmt.Println(err)
-		}
+		failCommand(commandConfig(args[1:]))
 		return
 	case "version":
 
@@ -102,31 +79,33 @@ func main() {
 		commandHelp(args)
 		return
 	default:
-		fmt.Printf("Unknown command: %s", args[0])
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		commandHelp(args)
 		os.Exit(1)
 	}
 }
 
+// commandHelp prints general or command-specific usage text.
 func commandHelp(args []string) {
 	helpString := `
-	Machina — asynchronous job execution engine
+	Machina - asynchronous job execution engine
 
 	Usage: machina <command> [flags]
 
 	Commands:
-	  start                              Start the server and engine
-	  shutdown							 Shutdown the server and engine
-	  health                             Check server health
-	  submit 							 Submit a job
-	  status                             Get the status of a job
-	  list                               List all jobs
-	  register                           Create and register a new job
-	  unregister                         Remove a registered job
-	  profile							 List of job Profiles available
-	  config                             View/Change config values
-	  version                            Print version
-	  help 			                     Show help for a command
+	  start       Start the server and engine
+	  shutdown    Shutdown the server and engine
+	  health      Check server health
+	  submit      Submit a job
+	  status      Get the status of a job
+	  list        List all jobs
+	  register    Create and register a new job
+	  unregister  Remove a registered job
+	  profile     List available job scaffolding profiles
+	  types       List registered job types
+	  config      View/change config values
+	  version     Print version
+	  help        Show help for a command
 
 	Run 'machina help <command>' for flags and examples.`
 
@@ -143,13 +122,22 @@ func commandHelp(args []string) {
 	  machina start --port 9090 --workers 8 --queue-size 200`
 
 	shutdownString := `
-    Usage: machina shutdown`
+	Usage: machina shutdown [--port]
+
+	Example:
+	  machina shutdown --port 9090`
 
 	healthString := `
 	Usage: machina health [--port]
 
+	Description:
+	  Check the Machina server health endpoint and print the JSON response.
+
+	Flags:
+	  --port <port>  Server port override (default: config.json port or 8080 fallback)
+
 	Example:
-  		machina health --port 9090`
+	  machina health --port 9090`
 
 	submitString := `
 	Usage: machina submit <job> <input> <output> [flags]
@@ -173,12 +161,15 @@ func commandHelp(args []string) {
 	statusString := `
 	Usage: machina status <id> [flags]
 
+	Description:
+	  Fetch a job by id from the Machina server and print the JSON status.
+
 	Flags:
 	  --watch              Continuously poll the server for status updates
 	                       until the job reaches a terminal state (completed|failed).
 	  --interval <secs>    Polling interval in seconds when using --watch
-	                      (default: 5)
-	  --port <port>        Server port override
+	                       (default: 2)
+	  --port <port>        Server port override (default: config.json port or 8080 fallback)
 
 	Examples:
 	  machina status d3adb33f
@@ -194,8 +185,9 @@ func commandHelp(args []string) {
 	  contains: id, status, error (if any), createdAt and updatedAt timestamps.
 
 	Flags:
-	  --status <status>    Filter jobs by status (pending|running|succeeded|failed)
+	  --status <status>    Filter jobs by status (pending|running|completed|failed)
 	                       (example: --status running)
+	  --port <port>        Server port override (default: config.json port or 8080 fallback)
 
 	Examples:
 	  machina list
@@ -211,11 +203,11 @@ func commandHelp(args []string) {
 
 	Profiles:
 	  batch       BatchProcessingJob scaffold
-	  parallel    ParallelProcessingJob scaffold
+	  singleRun   SingleRunJob scaffold
 
 	Examples:
 	  machina register batch image_resize
-	  machina register parallel thumbnail_cleanup`
+	  machina register singleRun thumbnail_cleanup`
 
 	unregisterString := `
 	Usage: machina unregister <job-name>
@@ -231,49 +223,78 @@ func commandHelp(args []string) {
 	Usage: machina profile
 
 	Description:
-	  Print the registered job types available to the Machina runtime.
-	  The output is a JSON array of registered job type names.
+	  Print the job scaffolding profiles available to the Machina generator.
+	  The output is a JSON array of profile names.
+
+	Flags:
+	  None
 
 	Example:
 	  machina profile`
 
+	typesString := `
+	Usage: machina types
+
+	Description:
+	  Print the registered job types available to the Machina runtime.
+	  The output is a JSON array of registered job type names.
+
+	Flags:
+	  None
+
+	Example:
+	  machina types`
+
 	configString := `
 	Usage: machina config [flags]
 
+	Description:
+	  Print the current config when called without flags, or update config.json
+	  values when called with flag/value pairs.
+
 	Flags:
-	  --port            <port>   Listen port            (default: 8080, json: port)
-	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCzount)`
+	  --port         <port>  Listen port stored in config.json
+	  --workers      <n>     Worker count stored in config.json
+	  --queue-size   <n>     Queue size stored in config.json
+
+	Examples:
+	  machina config
+	  machina config --port 9090
+	  machina config --workers 6 --queue-size 50`
 
 	if len(args) == 1 {
-		fmt.Print(helpString)
+		printHelpBlock(helpString)
 	} else if len(args) == 2 {
 		switch args[1] {
 		case "start":
-			fmt.Print(startString)
+			printHelpBlock(startString)
 		case "shutdown":
-			fmt.Print(shutdownString)
+			printHelpBlock(shutdownString)
 		case "health":
-			fmt.Print(healthString)
+			printHelpBlock(healthString)
 		case "submit":
-			fmt.Print(submitString)
+			printHelpBlock(submitString)
 		case "status":
-			fmt.Print(statusString)
+			printHelpBlock(statusString)
 		case "list":
-			fmt.Print(listString)
+			printHelpBlock(listString)
 		case "register":
-			fmt.Print(registerString)
+			printHelpBlock(registerString)
 		case "unregister":
-			fmt.Print(unregisterString)
+			printHelpBlock(unregisterString)
 		case "profile":
-			fmt.Print(profileString)
+			printHelpBlock(profileString)
+		case "types":
+			printHelpBlock(typesString)
 		case "config":
-			fmt.Print(configString)
+			printHelpBlock(configString)
 		default:
-			fmt.Printf("Invalid flag %s", args[1])
+			fmt.Printf("unknown help topic: %s\n", args[1])
 		}
 	}
 }
 
+// commandDescription prints a short project description before help output.
 func commandDescription() {
 	descriptionString := `
 	Machina — asynchronous job execution engine
@@ -282,15 +303,15 @@ func commandDescription() {
 	Machina is a concurrent job execution engine for Go. It decouples work submission from
 	work execution, giving you a structured runtime for asynchronous, resource-controlled processing.`
 
-	fmt.Print(descriptionString)
+	printHelpBlock(descriptionString)
 }
 
+// commandConfig prints or updates config.json values from CLI flags.
 func commandConfig(args []string) error {
-	configArgs := args[1:]
-	if len(configArgs) == 0 {
+	if len(args) == 0 {
 		config, err := readConfigJSON()
 		if err != nil {
-			return fmt.Errorf("Error reading Config file")
+			return fmt.Errorf("error reading config file")
 		}
 		fmt.Println("Version:", config.Version)
 		fmt.Println("Port:", config.Port)
@@ -298,13 +319,13 @@ func commandConfig(args []string) error {
 		fmt.Println("Queue size:", config.QueueSize)
 		return nil
 	}
-	if len(configArgs)%2 != 0 {
-		return fmt.Errorf("Not enough arguments")
+	if len(args)%2 != 0 {
+		return fmt.Errorf("missing value for %s", args[len(args)-1])
 	}
 
 	data, err := os.ReadFile("config.json")
 	if err != nil {
-		return fmt.Errorf("Config file is missing")
+		return fmt.Errorf("config file is missing")
 	}
 	var config api.Config
 	err = json.Unmarshal(data, &config)
@@ -315,12 +336,12 @@ func commandConfig(args []string) error {
 	var errors []error
 	var updated bool
 
-	for i := 0; i < len(configArgs); i += 2 {
-		switch configArgs[i] {
+	for i := 0; i < len(args); i += 2 {
+		switch args[i] {
 		case "--port":
-			port, err := strconv.Atoi(configArgs[i+1])
+			port, err := strconv.Atoi(args[i+1])
 			if err != nil {
-				errors = append(errors, fmt.Errorf("invalid port: %s (must be a number)", configArgs[i+1]))
+				errors = append(errors, fmt.Errorf("invalid port: %s (must be a number)", args[i+1]))
 				continue
 			}
 			if port != 8080 && (port < 49152 || port > 65535) {
@@ -328,37 +349,37 @@ func commandConfig(args []string) error {
 				continue
 			}
 			config.Port = port
-			fmt.Printf("Port value set to: %d\n", port)
+			fmt.Printf("port set to: %d\n", port)
 			updated = true
-		case "--workerCount":
-			workerCount, err := strconv.Atoi(configArgs[i+1])
+		case "--workers", "--workerCount":
+			workerCount, err := strconv.Atoi(args[i+1])
 			if err != nil {
-				errors = append(errors, fmt.Errorf("invalid worker count: %s (must be a number)", configArgs[i+1]))
+				errors = append(errors, fmt.Errorf("invalid worker count: %s (must be a number)", args[i+1]))
 				continue
 			}
 			if workerCount < 4 || workerCount > 10 {
-				errors = append(errors, fmt.Errorf("Worker count can't be set to: %d (must be between 4 and 10)", workerCount))
+				errors = append(errors, fmt.Errorf("worker count must be between 4 and 10"))
 				continue
 			}
 			config.WorkerCount = workerCount
-			fmt.Printf("Worker count set to: %d\n", workerCount)
+			fmt.Printf("worker count set to: %d\n", workerCount)
 			updated = true
-		case "--queueSize":
-			QueueSize, err := strconv.Atoi(configArgs[i+1])
+		case "--queue-size", "--queueSize":
+			queueSize, err := strconv.Atoi(args[i+1])
 			if err != nil {
-				errors = append(errors, fmt.Errorf("Invalid queue size: %s (must be a number)", configArgs[i+1]))
+				errors = append(errors, fmt.Errorf("invalid queue size: %s (must be a number)", args[i+1]))
 				continue
 			}
-			if QueueSize < 4 || QueueSize > 100 {
-				errors = append(errors, fmt.Errorf("Queue size can't be set to: %d (must be between 4 and 100)", QueueSize))
+			if queueSize < 4 || queueSize > 100 {
+				errors = append(errors, fmt.Errorf("queue size must be between 4 and 100"))
 				continue
 			}
-			config.QueueSize = QueueSize
-			fmt.Printf("Queue size set to: %d\n", QueueSize)
+			config.QueueSize = queueSize
+			fmt.Printf("queue size set to: %d\n", queueSize)
 			updated = true
 
 		default:
-			errors = append(errors, fmt.Errorf("invalid config flag: %s", configArgs[i]))
+			errors = append(errors, fmt.Errorf("invalid config flag: %s", args[i]))
 			continue
 		}
 	}
@@ -379,20 +400,21 @@ func commandConfig(args []string) error {
 	return nil
 }
 
+// commandStart boots the engine and HTTP server until interrupted.
 func commandStart(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	config, err := readConfigJSON()
 	if err != nil {
-		return fmt.Errorf("Error reading Config file")
+		return fmt.Errorf("error reading config file")
 	}
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--port":
 			if i+1 >= len(args) {
-				return fmt.Errorf("Not enough arguments for --port")
+				return fmt.Errorf("missing value for --port")
 			}
 			port, err := strconv.Atoi(args[i+1])
 			if err != nil {
@@ -402,7 +424,7 @@ func commandStart(args []string) error {
 			i++
 		case "--workers":
 			if i+1 >= len(args) {
-				return fmt.Errorf("Not enough arguments for --workers")
+				return fmt.Errorf("missing value for --workers")
 			}
 			workers, err := strconv.Atoi(args[i+1])
 			if err != nil {
@@ -412,7 +434,7 @@ func commandStart(args []string) error {
 			i++
 		case "--queue-size":
 			if i+1 >= len(args) {
-				return fmt.Errorf("Not enough arguments for --queue-size")
+				return fmt.Errorf("missing value for --queue-size")
 			}
 			queueSize, err := strconv.Atoi(args[i+1])
 			if err != nil {
@@ -430,7 +452,7 @@ func commandStart(args []string) error {
 	queue := make(chan jobs.JobSubmission, config.QueueSize)
 	eng := engine.New(log, queue, store, config.WorkerCount)
 	reg := registry.New()
-	reg.RegisterJob()
+	reg.RegisterJobs()
 	server := api.New(config, eng, store, log, reg)
 
 	eng.Start(ctx)
@@ -443,46 +465,54 @@ func commandStart(args []string) error {
 
 	err = server.Shutdown(shutdownCtx)
 	if err != nil {
-		return fmt.Errorf("Server shutdown error: %w", err)
+		return fmt.Errorf("server shutdown error: %w", err)
 	}
 	eng.Shutdown()
 	return nil
 }
 
-func commandShutdown() error {
-	config, err := readConfigJSON()
+// commandShutdown sends a shutdown request to a running Machina server.
+func commandShutdown(args []string) error {
+	port, remaining, err := parsePortFlag(args, defaultPort())
 	if err != nil {
-		return fmt.Errorf("Error reading config file")
+		return err
+	}
+	if len(remaining) > 0 {
+		return fmt.Errorf("invalid shutdown flag: %s", remaining[0])
 	}
 
-	url := "http://localhost:" + strconv.Itoa(config.Port) + "/shutdown"
+	url := "http://localhost:" + strconv.Itoa(port) + "/shutdown"
 
 	resp, statusCode, err := api.HttpPOST(url, nil)
 	if err != nil {
-		return fmt.Errorf("Failed to send shutdown request: %v", err)
+		return fmt.Errorf("failed to send shutdown request: %v", err)
 	}
 
 	if statusCode != http.StatusOK {
-		return fmt.Errorf("Server returned %d: %s", statusCode, string(resp))
+		return fmt.Errorf("server returned %d: %s", statusCode, string(resp))
 	}
 
 	fmt.Println("Shutdown signal sent successfully")
 	return nil
 }
 
-func commandHealth() error {
-	config, err := readConfigJSON()
+// commandHealth fetches and prints the server health payload.
+func commandHealth(args []string) error {
+	port, remaining, err := parsePortFlag(args, defaultPort())
 	if err != nil {
-		return fmt.Errorf("Error reading Config file")
+		return err
+	}
+	if len(remaining) > 0 {
+		return fmt.Errorf("invalid health flag: %s", remaining[0])
 	}
 
-	url := "http://localhost:" + strconv.Itoa(config.Port) + "/health"
+	url := "http://localhost:" + strconv.Itoa(port) + "/health"
 	response, statusCode, err := api.HttpGET(url)
 	if err != nil {
-		return fmt.Errorf("Couldn't reach server: %v", err)
+		return fmt.Errorf("could not reach server: %v", err)
 	}
 	if statusCode != http.StatusOK {
-		return fmt.Errorf("Server returned %d\n", statusCode)
+		return fmt.Errorf("server returned %d", statusCode)
 	}
 	var health map[string]any
 	json.Unmarshal(response, &health)
@@ -510,6 +540,7 @@ var jobTypeName = map[string]string{
 	"csv-transform": "csv_transform",
 }
 
+// commandSubmit translates a CLI job alias into an API submission payload.
 func commandSubmit(args []string) {
 	if len(args) < 3 {
 		commandHelp([]string{"help", "submit"})
@@ -520,23 +551,12 @@ func commandSubmit(args []string) {
 	inputPath := args[1]
 	outputPath := args[2]
 
-	port := "8080"
-	if config, err := readConfigJSON(); err == nil && config.Port != 0 {
-		port = strconv.Itoa(config.Port)
+	port, remaining, err := parsePortFlag(args[3:], defaultPort())
+	if err != nil {
+		failCommand(err)
 	}
-
-	for i := 3; i < len(args); i++ {
-		if args[i] == "--port" {
-			if i+1 >= len(args) {
-				fmt.Fprintf(os.Stderr, "missing value for --port\n")
-				os.Exit(1)
-			}
-			i++
-			port = args[i]
-		} else {
-			fmt.Fprintf(os.Stderr, "unknown flag %q\n", args[i])
-			os.Exit(1)
-		}
+	if len(remaining) > 0 {
+		failCommand(fmt.Errorf("unknown flag %q", remaining[0]))
 	}
 
 	builder, ok := jobPayload[jobName]
@@ -546,7 +566,7 @@ func commandSubmit(args []string) {
 	}
 
 	typeName := jobTypeName[jobName]
-	body, code, err := api.HttpPOST("http://localhost:"+port+"/jobs", map[string]any{
+	body, code, err := api.HttpPOST("http://localhost:"+strconv.Itoa(port)+"/jobs", map[string]any{
 		"type":    typeName,
 		"payload": builder(inputPath, outputPath),
 	})
@@ -568,20 +588,17 @@ func commandSubmit(args []string) {
 	printJSON(resp)
 }
 
+// commandStatus fetches one job status or polls until it reaches a terminal state.
 func commandStatus(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("No job ID provided")
+	if len(args) == 0 {
+		return fmt.Errorf("missing job id")
 	}
 
-	config, err := readConfigJSON()
+	jobID := args[0]
+	port, statusFlags, err := parsePortFlag(args[1:], defaultPort())
 	if err != nil {
-		return fmt.Errorf("Error reading Config file")
+		return err
 	}
-
-	JobID := args[1]
-	port := config.Port
-
-	statusFlags := args[2:]
 	var watch bool
 	interval := 2 * time.Second
 
@@ -591,33 +608,23 @@ func commandStatus(args []string) error {
 			watch = true
 		case "--interval":
 			if i+1 >= len(statusFlags) {
-				return fmt.Errorf("Not enough arguments for --interval")
+				return fmt.Errorf("missing value for --interval")
 			}
 			secs, err := strconv.Atoi(statusFlags[i+1])
 			if err != nil {
-				return fmt.Errorf("Invalid interval: %s (must be a number)", statusFlags[i+1])
+				return fmt.Errorf("invalid interval: %s (must be a number)", statusFlags[i+1])
 			}
 			if secs <= 0 {
-				return fmt.Errorf("Interval must be greater than 0")
+				return fmt.Errorf("interval must be greater than 0")
 			}
 			interval = time.Duration(secs) * time.Second
-			i++
-		case "--port":
-			if i+1 >= len(statusFlags) {
-				return fmt.Errorf("Not enough arguments for --port")
-			}
-			p, err := strconv.Atoi(statusFlags[i+1])
-			if err != nil {
-				return fmt.Errorf("Invalid port: %s (must be a number)", statusFlags[i+1])
-			}
-			port = p
 			i++
 		default:
 			return fmt.Errorf("invalid status flag: %s", statusFlags[i])
 		}
 	}
 
-	url := "http://localhost:" + strconv.Itoa(port) + "/jobs/" + JobID
+	url := "http://localhost:" + strconv.Itoa(port) + "/jobs/" + jobID
 
 	if watch {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -632,12 +639,11 @@ func commandStatus(args []string) error {
 
 	response, statusCode, err := api.HttpGET(url)
 	if err != nil {
-		return fmt.Errorf("Status error: %v", err)
+		return fmt.Errorf("status request failed: %v", err)
 	}
 	if statusCode != http.StatusOK {
 		responseString := string(response)
-
-		return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+		return fmt.Errorf("server returned %d: %s", statusCode, responseString)
 	}
 
 	var status map[string]any
@@ -646,20 +652,19 @@ func commandStatus(args []string) error {
 	return nil
 }
 
+// commandList fetches all jobs and optionally filters them client-side by status.
 func commandList(args []string) error {
-	config, err := readConfigJSON()
+	port, listFlags, err := parsePortFlag(args, defaultPort())
 	if err != nil {
-		return fmt.Errorf("Error reading Config file")
+		return err
 	}
-
-	listFlags := args[1:]
 	var statusFilter string
 
 	for i := 0; i < len(listFlags); i++ {
 		switch listFlags[i] {
 		case "--status":
 			if i+1 >= len(listFlags) {
-				return fmt.Errorf("Not enough arguments for --status")
+				return fmt.Errorf("missing value for --status")
 			}
 			statusFilter = strings.ToLower(strings.TrimSpace(listFlags[i+1]))
 			i++
@@ -668,15 +673,15 @@ func commandList(args []string) error {
 		}
 	}
 
-	baseURL := "http://localhost:" + strconv.Itoa(config.Port) + "/jobs"
+	baseURL := "http://localhost:" + strconv.Itoa(port) + "/jobs"
 
 	response, statusCode, err := api.HttpGET(baseURL)
 	if err != nil {
-		return fmt.Errorf("List error: %v", err)
+		return fmt.Errorf("list request failed: %v", err)
 	}
 	if statusCode != http.StatusOK {
 		responseString := string(response)
-		return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+		return fmt.Errorf("server returned %d: %s", statusCode, responseString)
 	}
 
 	var list []map[string]any
@@ -700,32 +705,47 @@ func commandList(args []string) error {
 	return nil
 }
 
+// commandProfile prints the available scaffolding profiles for job generation.
 func commandProfile(args []string) error {
-	if len(args) > 1 {
+	if len(args) > 0 {
 		return fmt.Errorf("profile does not accept flags")
 	}
 
-	profiles, err := registeredJobTypes()
-	if err != nil {
-		return err
-	}
-	printJSON(profiles)
+	printJSON([]string{"batch", "singleRun"})
 	return nil
 }
 
+// commandTypes prints the registered runtime job types.
+func commandTypes(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("types does not accept flags")
+	}
+
+	jobTypes, err := registeredJobTypes()
+	if err != nil {
+		return err
+	}
+	printJSON(jobTypes)
+	return nil
+}
+
+// commandRegister generates a job scaffold, opens it in an editor, and registers it.
 func commandRegister(args []string) error {
-	if len(args) != 3 {
+	if len(args) != 2 {
 		return fmt.Errorf("usage: machina register <profile> <job-name>")
 	}
 
-	profile := strings.ToLower(strings.TrimSpace(args[1]))
-	jobName := normalizeJobName(args[2])
+	profile := strings.ToLower(strings.TrimSpace(args[0]))
+	jobName := normalizeJobName(args[1])
 	if jobName == "" {
-		return fmt.Errorf("invalid job name: %q", args[2])
+		return fmt.Errorf("invalid job name: %q", args[1])
 	}
 
-	if profile != "batch" && profile != "parallel" {
-		return fmt.Errorf("unknown profile %q; valid profiles: batch, parallel", profile)
+	if profile != "batch" && profile != "singlerun" {
+		return fmt.Errorf("unknown profile %q; valid profiles: batch, singleRun", profile)
+	}
+	if profile == "singlerun" {
+		profile = "singleRun"
 	}
 
 	profiles, err := registeredJobTypes()
@@ -792,14 +812,15 @@ func commandRegister(args []string) error {
 	return nil
 }
 
+// commandUnregister removes a generated job file and its runtime registration.
 func commandUnregister(args []string) error {
-	if len(args) != 2 {
+	if len(args) != 1 {
 		return fmt.Errorf("usage: machina unregister <job-name>")
 	}
 
-	jobName := normalizeJobName(args[1])
+	jobName := normalizeJobName(args[0])
 	if jobName == "" {
-		return fmt.Errorf("invalid job name: %q", args[1])
+		return fmt.Errorf("invalid job name: %q", args[0])
 	}
 
 	profiles, err := registeredJobTypes()
@@ -817,7 +838,7 @@ func commandUnregister(args []string) error {
 		return fmt.Errorf("job %q is not registered", jobName)
 	}
 
-	spec := newJobSpec("parallel", jobName)
+	spec := newJobSpec("singleRun", jobName)
 	if err := removeRegistryConstructor(spec); err != nil {
 		return err
 	}
@@ -838,6 +859,24 @@ func commandUnregister(args []string) error {
 	return nil
 }
 
+// resolveEditor finds the best available editor from env vars or common fallbacks.
+func resolveEditor() (string, error) {
+	for _, key := range []string{"VISUAL", "EDITOR"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value, nil
+		}
+	}
+
+	for _, candidate := range []string{"nano", "vim", "vi"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
+}
+
+// openEditor launches the resolved editor against the generated temp file.
 func openEditor(path string) error {
 	editor, err := resolveEditor()
 	if err != nil {
@@ -858,22 +897,7 @@ func openEditor(path string) error {
 	return nil
 }
 
-func resolveEditor() (string, error) {
-	for _, key := range []string{"VISUAL", "EDITOR"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value, nil
-		}
-	}
-
-	for _, candidate := range []string{"nano", "vim", "vi"} {
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-
-	return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
-}
-
+// readConfigJSON loads config.json into the shared API config struct.
 func readConfigJSON() (api.Config, error) {
 	data, err := os.ReadFile("config.json")
 	if err != nil {
@@ -887,6 +911,7 @@ func readConfigJSON() (api.Config, error) {
 	return config, nil
 }
 
+// writeConfigJSON persists config.json updates in a stable indented format.
 func writeConfigJSON(config api.Config) error {
 	updated, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -900,12 +925,23 @@ func writeConfigJSON(config api.Config) error {
 	return nil
 }
 
+// printJSON writes indented JSON responses to stdout for CLI commands.
 func printJSON(content any) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.Encode(content)
 }
 
+// printHelpBlock strips raw-string indentation before printing help text.
+func printHelpBlock(text string) {
+	lines := strings.Split(strings.Trim(text, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimPrefix(line, "\t")
+	}
+	fmt.Println(strings.Join(lines, "\n"))
+}
+
+// pollURL repeatedly fetches a job status endpoint until the job finishes or the context ends.
 func pollURL(ctx context.Context, url string, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -913,11 +949,11 @@ func pollURL(ctx context.Context, url string, interval time.Duration) error {
 	for {
 		response, statusCode, err := api.HttpGET(url)
 		if err != nil {
-			return fmt.Errorf("Status error: %v", err)
+			return fmt.Errorf("status request failed: %v", err)
 		}
 		if statusCode != http.StatusOK {
 			responseString := string(response)
-			return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+			return fmt.Errorf("server returned %d: %s", statusCode, responseString)
 		}
 
 		var status map[string]any
@@ -932,7 +968,7 @@ func pollURL(ctx context.Context, url string, interval time.Duration) error {
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("Stopping poll")
+			fmt.Println("stopping poll")
 			return nil
 		case <-ticker.C:
 

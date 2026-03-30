@@ -15,6 +15,7 @@ type StatusResponse struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// statusHandler returns the current state and result for a submitted job.
 func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "405 Method Not Allowed", http.StatusMethodNotAllowed)

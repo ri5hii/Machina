@@ -29,12 +29,14 @@ type JobStore struct {
 	jobRecord map[string]*JobRecord
 }
 
+// NewStore creates an in-memory job store for tracking lifecycle state and results.
 func NewStore() *JobStore {
 	return &JobStore{
 		jobRecord: make(map[string]*JobRecord),
 	}
 }
 
+// Add records a newly accepted job in pending state.
 func (s *JobStore) Add(id string, job jobs.JobRunType) *JobRecord {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -53,6 +55,7 @@ func (s *JobStore) Add(id string, job jobs.JobRunType) *JobRecord {
 	return jobrecord
 }
 
+// Get fetches one stored job record by id.
 func (s *JobStore) Get(id string) (*JobRecord, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -61,6 +64,7 @@ func (s *JobStore) Get(id string) (*JobRecord, bool) {
 	return record, ok
 }
 
+// List returns all stored job records in insertion-independent order.
 func (s *JobStore) List() []*JobRecord {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -72,6 +76,7 @@ func (s *JobStore) List() []*JobRecord {
 	return records
 }
 
+// SetStatus updates the lifecycle status for one stored job.
 func (s *JobStore) SetStatus(id string, status string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -83,6 +88,7 @@ func (s *JobStore) SetStatus(id string, status string) {
 	}
 }
 
+// SetError records the terminal error for one stored job.
 func (s *JobStore) SetError(id string, err error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -94,6 +100,7 @@ func (s *JobStore) SetError(id string, err error) {
 	}
 }
 
+// SetResult records the final result for one stored job.
 func (s *JobStore) SetResult(id string, result any) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
