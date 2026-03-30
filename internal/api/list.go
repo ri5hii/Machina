@@ -19,6 +19,7 @@ func (s *Server) listHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "405 Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	records := s.store.List()
 
 	response := make([]ListResponse, len(records))

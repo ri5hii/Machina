@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"os/signal"
@@ -55,6 +56,12 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error connecting to server: %v", err)
 		}
+	case "list":
+		err := commandList(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "status":
 		err := commandStatus(args)
 		if err != nil {
@@ -78,13 +85,13 @@ func commandHelp(args []string) {
 
 	Commands:
 	  start                              Start the server and engine
-	  status <id>                        Get the status of a job
-	  submit <job-name> <input> <output> Submit a job
-	  jobs                               List all jobs
+	  status                             Get the status of a job
+	  submit 							 Submit a job
+	  list                               List all jobs
 	  health                             Check server health
 	  config                             View/Change config values
 	  version                            Print version
-	  help [command]                     Show help for a command
+	  help 			                     Show help for a command
 
 	Run 'machina help <command>' for flags and examples.`
 
@@ -118,14 +125,30 @@ func commandHelp(args []string) {
 
 	Flags:
 	  --watch              Continuously poll the server for status updates
-	                      until the job reaches a terminal state (succeeded|failed).
+	                       until the job reaches a terminal state (succeeded|failed).
 	  --interval <secs>    Polling interval in seconds when using --watch
-	                      (default: 2)
+	                      (default: 5)
 
 	Examples:
 	  machina status d3adb33f
 	  machina status d3adb33f --watch
 	  machina status d3adb33f --watch --interval 5`
+
+	listString := `
+	Usage: machina list [flags]
+
+	Description:
+	  List all jobs currently stored on the server. The command fetches the job
+	  list from the server and prints a JSON array of job records. Each record
+	  contains: id, status, error (if any), createdAt and updatedAt timestamps.
+
+	Flags:
+	  --status <status>    Filter jobs by status (pending|running|succeeded|failed)
+	                       (example: --status running)
+
+	Examples:
+	  machina list
+	  machina list --status running`
 
 	if len(args) == 1 {
 		fmt.Print(helpString)
@@ -139,6 +162,8 @@ func commandHelp(args []string) {
 			fmt.Print(configString)
 		case "status":
 			fmt.Print(statusString)
+		case "list":
+			fmt.Print(listString)
 		default:
 			fmt.Printf("Invalid flag %s", args[1])
 		}
@@ -366,6 +391,60 @@ func commandStatus(args []string) error {
 	var status map[string]any
 	json.Unmarshal(response, &status)
 	printJSON(status)
+	return nil
+}
+
+func commandList(args []string) error {
+	config, err := readConfigJSON()
+	if err != nil {
+		return fmt.Errorf("Error reading Config file")
+	}
+
+	listFlags := args[1:]
+	var statusFilter string
+
+	for i := 0; i < len(listFlags); i++ {
+		switch listFlags[i] {
+		case "--status":
+			if i+1 >= len(listFlags) {
+				return fmt.Errorf("Not enough arguments for --status")
+			}
+			statusFilter = strings.ToLower(strings.TrimSpace(listFlags[i+1]))
+			i++
+		default:
+			return fmt.Errorf("invalid list flag: %s", listFlags[i])
+		}
+	}
+
+	baseURL := "http://localhost:" + strconv.Itoa(config.Port) + "/jobs"
+
+	response, statusCode, err := api.HttpGET(baseURL)
+	if err != nil {
+		return fmt.Errorf("List error: %v", err)
+	}
+	if statusCode != http.StatusOK {
+		responseString := string(response)
+		return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+	}
+
+	var list []map[string]any
+	if err := json.Unmarshal(response, &list); err != nil {
+		return fmt.Errorf("invalid response: %v", err)
+	}
+
+	if statusFilter != "" {
+		filtered := make([]map[string]any, 0)
+		for _, rec := range list {
+			if s, ok := rec["status"].(string); ok {
+				if strings.ToLower(s) == statusFilter {
+					filtered = append(filtered, rec)
+				}
+			}
+		}
+		list = filtered
+	}
+
+	printJSON(list)
 	return nil
 }
 
