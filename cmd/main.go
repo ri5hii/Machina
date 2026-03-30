@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"context"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
@@ -65,6 +68,18 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "register":
+		err := commandRegister(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	case "unregister":
+		err := commandUnregister(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "profile":
 		err := commandProfile(args)
 		if err != nil {
@@ -106,6 +121,8 @@ func commandHelp(args []string) {
 	  submit 							 Submit a job
 	  status                             Get the status of a job
 	  list                               List all jobs
+	  register                           Create and register a new job
+	  unregister                         Remove a registered job
 	  profile							 List of job Profiles available
 	  config                             View/Change config values
 	  version                            Print version
@@ -184,11 +201,37 @@ func commandHelp(args []string) {
 	  machina list
 	  machina list --status running`
 
+	registerString := `
+	Usage: machina register <profile> <job-name>
+
+	Description:
+	  Create a new job source file from a profile template, open it in the
+	  default editor, then save it into internal/jobs and auto-register it in
+	  the payload constructor registry.
+
+	Profiles:
+	  batch       BatchProcessingJob scaffold
+	  parallel    ParallelProcessingJob scaffold
+
+	Examples:
+	  machina register batch image_resize
+	  machina register parallel thumbnail_cleanup`
+
+	unregisterString := `
+	Usage: machina unregister <job-name>
+
+	Description:
+	  Remove a registered job type from the registry and delete its job source
+	  file from internal/jobs.
+
+	Example:
+	  machina unregister image_resize`
+
 	profileString := `
 	Usage: machina profile
 
 	Description:
-	  Print the registered job profiles available to the Machina runtime.
+	  Print the registered job types available to the Machina runtime.
 	  The output is a JSON array of registered job type names.
 
 	Example:
@@ -217,6 +260,10 @@ func commandHelp(args []string) {
 			fmt.Print(statusString)
 		case "list":
 			fmt.Print(listString)
+		case "register":
+			fmt.Print(registerString)
+		case "unregister":
+			fmt.Print(unregisterString)
 		case "profile":
 			fmt.Print(profileString)
 		case "config":
@@ -658,10 +705,173 @@ func commandProfile(args []string) error {
 		return fmt.Errorf("profile does not accept flags")
 	}
 
-	reg := registry.New()
-	reg.RegisterJob()
-	printJSON(reg.Profiles())
+	profiles, err := registeredJobTypes()
+	if err != nil {
+		return err
+	}
+	printJSON(profiles)
 	return nil
+}
+
+func commandRegister(args []string) error {
+	if len(args) != 3 {
+		return fmt.Errorf("usage: machina register <profile> <job-name>")
+	}
+
+	profile := strings.ToLower(strings.TrimSpace(args[1]))
+	jobName := normalizeJobName(args[2])
+	if jobName == "" {
+		return fmt.Errorf("invalid job name: %q", args[2])
+	}
+
+	if profile != "batch" && profile != "parallel" {
+		return fmt.Errorf("unknown profile %q; valid profiles: batch, parallel", profile)
+	}
+
+	profiles, err := registeredJobTypes()
+	if err != nil {
+		return err
+	}
+	for _, existing := range profiles {
+		if existing == jobName {
+			return fmt.Errorf("job %q is already registered", jobName)
+		}
+	}
+
+	jobFilePath := filepath.Join("internal", "jobs", jobName+".go")
+	if _, err := os.Stat(jobFilePath); err == nil {
+		return fmt.Errorf("job file already exists: %s", jobFilePath)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	spec := newJobSpec(profile, jobName)
+	template := buildJobTemplate(spec)
+
+	tempFile, err := os.CreateTemp("", spec.FileName+"-*.go")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := tempFile.WriteString(template); err != nil {
+		tempFile.Close()
+		return fmt.Errorf("failed to write temp template: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp template: %w", err)
+	}
+
+	if err := openEditor(tempPath); err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(tempPath)
+	if err != nil {
+		return fmt.Errorf("failed to read edited template: %w", err)
+	}
+	if len(bytes.TrimSpace(content)) == 0 {
+		return fmt.Errorf("edited file is empty")
+	}
+
+	if err := os.WriteFile(jobFilePath, content, 0o644); err != nil {
+		return fmt.Errorf("failed to save job file: %w", err)
+	}
+
+	if err := appendRegistryConstructor(spec); err != nil {
+		return err
+	}
+
+	if err := gofmtFiles(jobFilePath, filepath.Join("internal", "registry", "payloadConstructor.go")); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created %s\n", jobFilePath)
+	fmt.Printf("Registered %s using profile %s\n", jobName, profile)
+	return nil
+}
+
+func commandUnregister(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: machina unregister <job-name>")
+	}
+
+	jobName := normalizeJobName(args[1])
+	if jobName == "" {
+		return fmt.Errorf("invalid job name: %q", args[1])
+	}
+
+	profiles, err := registeredJobTypes()
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, existing := range profiles {
+		if existing == jobName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("job %q is not registered", jobName)
+	}
+
+	spec := newJobSpec("parallel", jobName)
+	if err := removeRegistryConstructor(spec); err != nil {
+		return err
+	}
+
+	jobFilePath := filepath.Join("internal", "jobs", jobName+".go")
+	if err := os.Remove(jobFilePath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete job file: %w", err)
+	}
+
+	if err := gofmtFiles(filepath.Join("internal", "registry", "payloadConstructor.go")); err != nil {
+		return err
+	}
+
+	fmt.Printf("Unregistered %s\n", jobName)
+	if _, err := os.Stat(jobFilePath); os.IsNotExist(err) {
+		fmt.Printf("Deleted %s\n", jobFilePath)
+	}
+	return nil
+}
+
+func openEditor(path string) error {
+	editor, err := resolveEditor()
+	if err != nil {
+		return err
+	}
+
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		return fmt.Errorf("no editor configured")
+	}
+	cmd := exec.Command(parts[0], append(parts[1:], path)...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("editor failed: %w", err)
+	}
+	return nil
+}
+
+func resolveEditor() (string, error) {
+	for _, key := range []string{"VISUAL", "EDITOR"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value, nil
+		}
+	}
+
+	for _, candidate := range []string{"nano", "vim", "vi"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
 }
 
 func readConfigJSON() (api.Config, error) {
