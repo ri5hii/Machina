@@ -77,7 +77,7 @@ Machina is built around four components. Each has a single responsibility, and t
 
 A job is a self-contained unit of work. It owns its input structure, its validation logic, and its processing logic. It has no knowledge of the engine, the queue, or any other job. It is just a struct that implements an interface.
 
-There are two kinds: a simple `Job` with a single `Run` method, and a `BatchProcessingJob` with four methods that the engine drives in sequence. Either way, the job's only job is to describe what work needs to be done and how to do it.
+There are two kinds: a `SingleRunJob` with a single `Run` method, and a `BatchProcessingJob` with four methods that the engine drives in sequence. Either way, the job's only job is to describe what work needs to be done and how to do it.
 
 ### Payload Constructor
 
@@ -137,12 +137,12 @@ Each component only knows about the one to its right through an interface or a f
 
 There are two kinds of jobs.
 
-### Simple Job
+### Single-Run Job
 
 For work that does not benefit from item-level parallelism. Implements a single method:
 
 ```go
-type Job interface {
+type SingleRunJob interface {
     Run(ctx context.Context) (any, error)
 }
 ```
@@ -153,10 +153,10 @@ For work over a collection of independent items. The engine drives the full life
 
 ```go
 type BatchProcessingJob interface {
-    Scan()                                    ([]Item, error)
-    ChunkSize()                               int
+    Scan()                                      ([]Item, error)
+    ChunkSize()                                 int
     RunBatch(ctx context.Context, batch []Item) (any, error)
-    Aggregate(results []any)                  (any, error)
+    Aggregate(results []any)                    (any, error)
 }
 ```
 
@@ -233,14 +233,21 @@ Response:
 ## CLI
 
 ```
-machina start                              Start the engine and HTTP server
-machina submit <job> <input> <output>      Submit a job
-machina status <id>                        Get job status and result
-machina status <id> --watch               Poll until terminal state
-machina jobs                               List all jobs
-machina jobs --status failed              Filter by status
-machina health                             Check engine health
+machina start                                  Start the engine and HTTP server
+machina shutdown [--port]                      Stop the running server
+machina health [--port]                        Check server health
+machina submit <job> <input> <output>         Submit a job
+machina status <id> [--watch] [--port]        Get job status and result
+machina list [--status <status>] [--port]     List jobs
+machina profile                                List job scaffolding profiles
+machina types                                  List registered job types
+machina register <profile> <job-name>         Generate and register a job
+machina unregister <job-name>                 Remove a registered job
+machina config [flags]                         Read or update config.json
 ```
+
+`profile` returns scaffolding profiles such as `batch` and `singleRun`.
+`types` returns registered runtime job types such as `csv_transform` and `file_encrypt`.
 
 ---
 
@@ -255,7 +262,13 @@ machina health                             Check engine health
 
 ## Configuration
 
-All options can be set via flags or environment variables.
+Machina reads defaults from `config.json`. For commands that accept `--port`, precedence is:
+
+```
+flag override -> config.json -> 8080 fallback
+```
+
+At startup, `machina start` also accepts environment overrides.
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
