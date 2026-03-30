@@ -73,30 +73,30 @@ func main() {
 func commandHelp(args []string) {
 	helpString := `
 	Machina — asynchronous job execution engine
-	
+
 	Usage: machina <command> [flags]
-	
+
 	Commands:
 	  start                              Start the server and engine
 	  status <id>                        Get the status of a job
-	  config                             View/Change config values
 	  submit <job-name> <input> <output> Submit a job
 	  jobs                               List all jobs
 	  health                             Check server health
+	  config                             View/Change config values
 	  version                            Print version
 	  help [command]                     Show help for a command
-	
+
 	Run 'machina help <command>' for flags and examples.`
 
 	startString := `
 	Usage: machina start [flags]
-	
+
 	Flags:
 	  --port        <port>   Listen port            (default: 8080, env: PORT)
 	  --log-level   <level>  DEBUG|INFO|WARN|ERROR  (default: INFO,  env: LOG_LEVEL)
 	  --workers     <n>      Worker goroutine count (default: 4,    env: WORKER_COUNT)
 	  --queue-size  <n>      Bounded queue capacity (default: 100,  env: QUEUE_SIZE)
-	
+
 	Example:
 	  machina start --port 9090 --workers 8 --queue-size 200`
 
@@ -108,10 +108,24 @@ func commandHelp(args []string) {
 
 	configString := `
 	Usage: machina config [flags]
-	
+
 	Flags:
 	  --port            <port>   Listen port            (default: 8080, json: port)
 	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCount)`
+
+	statusString := `
+	Usage: machina status <id> [flags]
+
+	Flags:
+	  --watch              Continuously poll the server for status updates
+	                      until the job reaches a terminal state (succeeded|failed).
+	  --interval <secs>    Polling interval in seconds when using --watch
+	                      (default: 2)
+
+	Examples:
+	  machina status d3adb33f
+	  machina status d3adb33f --watch
+	  machina status d3adb33f --watch --interval 5`
 
 	if len(args) == 1 {
 		fmt.Print(helpString)
@@ -123,6 +137,8 @@ func commandHelp(args []string) {
 			fmt.Print(healthString)
 		case "config":
 			fmt.Print(configString)
+		case "status":
+			fmt.Print(statusString)
 		default:
 			fmt.Printf("Invalid flag %s", args[1])
 		}
@@ -132,7 +148,7 @@ func commandHelp(args []string) {
 func commandDescription() {
 	descriptionString := `
 	Machina — asynchronous job execution engine
-	
+
 	Description:
 	Machina is a concurrent job execution engine for Go. It decouples work submission from
 	work execution, giving you a structured runtime for asynchronous, resource-controlled processing.`
@@ -299,6 +315,44 @@ func commandStatus(args []string) error {
 
 	JobID := args[1]
 	url := "http://localhost:" + strconv.Itoa(config.Port) + "/jobs/" + JobID
+
+	statusFlags := args[2:]
+	var watch bool
+	interval := 2 * time.Second
+
+	for i := 0; i < len(statusFlags); i++ {
+		switch statusFlags[i] {
+		case "--watch":
+			watch = true
+		case "--interval":
+			if i+1 >= len(statusFlags) {
+				return fmt.Errorf("Not enough arguments for --interval")
+			}
+			secs, err := strconv.Atoi(statusFlags[i+1])
+			if err != nil {
+				return fmt.Errorf("Invalid interval: %s (must be a number)", statusFlags[i+1])
+			}
+			if secs <= 0 {
+				return fmt.Errorf("Interval must be greater than 0")
+			}
+			interval = time.Duration(secs) * time.Second
+			i++
+		default:
+			return fmt.Errorf("invalid status flag: %s", statusFlags[i])
+		}
+	}
+
+	if watch {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		err := pollURL(ctx, url, interval)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
 	response, statusCode, err := api.HttpGET(url)
 	if err != nil {
 		return fmt.Errorf("Status error: %v", err)
@@ -327,6 +381,7 @@ func readConfigJSON() (api.Config, error) {
 	}
 	return config, nil
 }
+
 func writeConfigJSON(config api.Config) error {
 	updated, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -344,4 +399,38 @@ func printJSON(content any) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.Encode(content)
+}
+
+func pollURL(ctx context.Context, url string, interval time.Duration) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		response, statusCode, err := api.HttpGET(url)
+		if err != nil {
+			return fmt.Errorf("Status error: %v", err)
+		}
+		if statusCode != http.StatusOK {
+			responseString := string(response)
+			return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+		}
+
+		var status map[string]any
+		json.Unmarshal(response, &status)
+		printJSON(status)
+
+		if s, ok := status["status"].(string); ok {
+			if s == "succeeded" || s == "failed" {
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			fmt.Println("Stopping poll")
+			return nil
+		case <-ticker.C:
+
+		}
+	}
 }
