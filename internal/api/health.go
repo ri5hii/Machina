@@ -6,10 +6,10 @@ import (
 )
 
 type response struct {
-	ServerStatus string `json:"server-status"`
-	EngineStatus string `json:"engine-status"`
-	Port         string       `json:"port"`
-	Version      string       `json:"version"`
+	ServerStatus string `json:"serverStatus"`
+	EngineStatus string `json:"engineStatus"`
+	Port         string `json:"port"`
+	Version      string `json:"version"`
 }
 
 func (server *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
