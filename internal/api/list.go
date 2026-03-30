@@ -14,6 +14,7 @@ type ListResponse struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// listHandler returns every stored job record for CLI listing and filtering.
 func (s *Server) listHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "405 Method Not Allowed", http.StatusMethodNotAllowed)

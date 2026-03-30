@@ -40,6 +40,7 @@ type Server struct {
 	status   atomic.Value
 }
 
+// New creates an HTTP server wired to the engine, store, and registry.
 func New(config Config, eng *engine.Engine, store *storage.JobStore, log *slog.Logger, reg *registry.Registry) *Server {
 	server := &Server{
 		logger:   log,
@@ -59,10 +60,12 @@ func New(config Config, eng *engine.Engine, store *storage.JobStore, log *slog.L
 	return server
 }
 
+// Handler exposes the server router for tests and embedding.
 func (server *Server) Handler() http.Handler {
 	return server.http.Handler
 }
 
+// Start begins serving HTTP requests on the configured address.
 func (server *Server) Start() error {
 	go func() {
 		err := server.http.ListenAndServe()
@@ -79,6 +82,7 @@ func (server *Server) Start() error {
 	return nil
 }
 
+// Shutdown stops the HTTP server within the provided deadline context.
 func (server *Server) Shutdown(ctx context.Context) error {
 	server.logger.Info("Server status", "Status", Shutdown)
 	server.status.Store(Shutdown)
@@ -86,6 +90,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	return server.http.Shutdown(ctx)
 }
 
+// HttpGET is a small CLI client helper for JSON endpoints.
 func HttpGET(url string) ([]byte, int, error) {
 	response, err := http.Get(url)
 	if err != nil {
@@ -100,6 +105,7 @@ func HttpGET(url string) ([]byte, int, error) {
 	return body, response.StatusCode, err
 }
 
+// HttpPOST is a small CLI client helper for JSON POST requests.
 func HttpPOST(url string, payload any) ([]byte, int, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

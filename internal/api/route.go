@@ -4,6 +4,7 @@ import (
 	"net/http"
 )
 
+// routes wires the server endpoints used by the CLI and shell tests.
 func (server *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.healthHandler)

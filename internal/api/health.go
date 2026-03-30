@@ -12,6 +12,7 @@ type response struct {
 	Version      string `json:"version"`
 }
 
+// healthHandler reports server and engine state for readiness checks.
 func (server *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	serverStatus := server.status.Load().(string)
 	engineStatus := server.eng.EngineStatusInfo()

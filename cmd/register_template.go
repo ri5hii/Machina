@@ -16,6 +16,7 @@ type jobSpec struct {
 	DefaultChunkSize int
 }
 
+// newJobSpec derives generated type names and filenames from a profile and job name.
 func newJobSpec(profile, jobName string) jobSpec {
 	typeName := toPascalCase(jobName)
 	return jobSpec{
@@ -30,6 +31,7 @@ func newJobSpec(profile, jobName string) jobSpec {
 	}
 }
 
+// normalizeJobName converts user input into the snake_case job names used by the registry.
 func normalizeJobName(raw string) string {
 	raw = strings.TrimSpace(strings.ToLower(raw))
 	var b strings.Builder
@@ -52,6 +54,7 @@ func normalizeJobName(raw string) string {
 	return strings.Trim(b.String(), "_")
 }
 
+// toPascalCase converts a snake_case job name into exported Go type names.
 func toPascalCase(name string) string {
 	parts := strings.Split(name, "_")
 	var b strings.Builder
@@ -67,6 +70,7 @@ func toPascalCase(name string) string {
 	return b.String()
 }
 
+// buildJobTemplate selects the scaffold for the requested job profile.
 func buildJobTemplate(spec jobSpec) string {
 	if spec.Profile == "singleRun" {
 		return buildParallelTemplate(spec)
@@ -74,6 +78,7 @@ func buildJobTemplate(spec jobSpec) string {
 	return buildBatchTemplate(spec)
 }
 
+// buildParallelTemplate renders the single-run job scaffold used by register.
 func buildParallelTemplate(spec jobSpec) string {
 	return fmt.Sprintf(`package jobs
 
@@ -140,6 +145,7 @@ func (j *%s) Run(ctx context.Context) (any, error) {
 `, spec.TypeName, spec.InputTypeName, spec.ResultTypeName, spec.InputTypeName, spec.ResultTypeName, spec.TypeName, spec.InputTypeName, spec.TypeName, spec.JobType, spec.TypeName, spec.JobType, spec.JobType, spec.TypeName, spec.ResultTypeName)
 }
 
+// buildBatchTemplate renders the batch job scaffold used by register.
 func buildBatchTemplate(spec jobSpec) string {
 	return fmt.Sprintf(`package jobs
 

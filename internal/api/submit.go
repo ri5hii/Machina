@@ -15,6 +15,7 @@ type SubmitResponse struct {
 	Status string `json:"status"`
 }
 
+// submitHandler validates a job submission and queues it for execution.
 func (s *Server) submitHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "405 Method Not Allowed", http.StatusMethodNotAllowed)

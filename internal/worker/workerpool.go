@@ -20,6 +20,7 @@ type WorkerPool struct {
 	waitGroup   sync.WaitGroup
 }
 
+// New builds a worker pool around the shared queue and job store.
 func New(workerCount int, queue <-chan jobs.JobSubmission, store *storage.JobStore, logger *slog.Logger) *WorkerPool {
 	return &WorkerPool{
 		workerCount: workerCount,
@@ -29,6 +30,7 @@ func New(workerCount int, queue <-chan jobs.JobSubmission, store *storage.JobSto
 	}
 }
 
+// Start launches the configured number of workers against the shared queue.
 func (pool *WorkerPool) Start(ctx context.Context) {
 	pool.logger.Info("Starting worker pool", "Worker count", pool.workerCount)
 	pool.waitGroup.Add(pool.workerCount)
@@ -43,10 +45,12 @@ func (pool *WorkerPool) Start(ctx context.Context) {
 	}
 }
 
+// Wait blocks until all worker goroutines have exited.
 func (pool *WorkerPool) Wait() {
 	pool.waitGroup.Wait()
 }
 
+// worker consumes queued jobs until the context is canceled or the queue closes.
 func (pool *WorkerPool) worker(ctx context.Context, WorkerID int) {
 	for {
 		select {
@@ -78,7 +82,9 @@ func (pool *WorkerPool) worker(ctx context.Context, WorkerID int) {
 	}
 }
 
+// SafeExecute dispatches the concrete job type and converts panics into job errors.
 func (pool *WorkerPool) SafeExecute(ctx context.Context, submission jobs.JobSubmission, workerID int) (result any, err error) {
+	// Worker safety matters more than crashing fast here because one bad job should not kill the pool.
 	defer func() {
 		r := recover()
 		if r != nil {
@@ -97,6 +103,7 @@ func (pool *WorkerPool) SafeExecute(ctx context.Context, submission jobs.JobSubm
 	}
 }
 
+// executeBatch fans out chunk work and stops the batch on the first chunk failure.
 func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string, logger *slog.Logger) (any, error) {
 	items, err := job.Scan()
 	if err != nil {
@@ -117,6 +124,7 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 
 	partials := make([]any, len(chunks))
 
+	// errgroup propagates the first batch error through context cancellation to the rest of the chunks.
 	errGroup, errGroupCtx := errgroup.WithContext(ctx)
 
 	BatchStartTime := time.Now()
@@ -169,6 +177,7 @@ func executeBatch(ctx context.Context, job jobs.BatchProcessingJob, jobID string
 	return result, nil
 }
 
+// partition groups items into chunk-sized slices for batch execution.
 func partition(items []jobs.Item, chunkSize int) [][]jobs.Item {
 	if chunkSize <= 0 {
 		return [][]jobs.Item{items}

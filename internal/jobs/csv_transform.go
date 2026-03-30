@@ -42,8 +42,10 @@ type CSVTransformJob struct {
 	separator  rune
 }
 
+// JobType reports the runtime registry key for this job.
 func (j *CSVTransformJob) JobType() string { return "csv_transform" }
 
+// Validate checks the CSV transform input before execution starts.
 func (j *CSVTransformJob) Validate() error {
 	if j.Input.InputPath == "" {
 		return fmt.Errorf("csv_transform: input_path is required")
@@ -73,10 +75,13 @@ func (j *CSVTransformJob) Validate() error {
 	return nil
 }
 
+// MaxRetries reports the retry policy for this job type.
 func (j *CSVTransformJob) MaxRetries() int { return 1 }
 
+// ChunkSize controls how many CSV rows are processed per batch.
 func (j *CSVTransformJob) ChunkSize() int { return 4 }
 
+// Scan reads the input CSV and turns rows into batch work items.
 func (j *CSVTransformJob) Scan() ([]Item, error) {
 	if j.Input.TransformType == "" {
 		j.Input.TransformType = "trim"
@@ -103,6 +108,7 @@ func (j *CSVTransformJob) Scan() ([]Item, error) {
 	return items, nil
 }
 
+// RunBatch applies the configured transform to one chunk of CSV rows.
 func (j *CSVTransformJob) RunBatch(ctx context.Context, batch []Item) (any, error) {
 	partial := csvBatchPartial{
 		result: CSVTransformResult{
@@ -138,6 +144,7 @@ func (j *CSVTransformJob) RunBatch(ctx context.Context, batch []Item) (any, erro
 	return partial, nil
 }
 
+// Aggregate merges transformed row batches and writes the final output CSV.
 func (j *CSVTransformJob) Aggregate(partials []any) (any, error) {
 	final := CSVTransformResult{
 		OutputPath:    j.Input.OutputPath,
@@ -164,6 +171,7 @@ func (j *CSVTransformJob) Aggregate(partials []any) (any, error) {
 	return final, nil
 }
 
+// parseCSVSeparator converts the configured separator string into a CSV delimiter rune.
 func parseCSVSeparator(raw string) (rune, error) {
 	if raw == "" {
 		return ',', nil
@@ -190,6 +198,7 @@ func parseCSVSeparator(raw string) (rune, error) {
 	return sep, nil
 }
 
+// transformRow applies one supported text transform to every field in a row.
 func transformRow(fields []string, transformType string) ([]string, error) {
 	out := make([]string, len(fields))
 	for i, field := range fields {
@@ -207,6 +216,7 @@ func transformRow(fields []string, transformType string) ([]string, error) {
 	return out, nil
 }
 
+// readCSV loads an input CSV file and optionally separates the header row.
 func readCSV(inputPath string, separator rune, hasHeader bool) ([][]string, []string, error) {
 	f, err := os.Open(inputPath)
 	if err != nil {
@@ -237,6 +247,7 @@ func readCSV(inputPath string, separator rune, hasHeader bool) ([][]string, []st
 	return dataRows, header, nil
 }
 
+// writeCSV writes the transformed header and rows to the target output path.
 func writeCSV(outputPath string, header []string, rows [][]string, separator rune) error {
 	f, err := os.Create(outputPath)
 	if err != nil {

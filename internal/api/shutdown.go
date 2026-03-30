@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// handleShutdown stops the HTTP server in response to an internal control request.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)

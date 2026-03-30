@@ -25,6 +25,7 @@ import (
 	"github.com/ri5hii/Machina/internal/storage"
 )
 
+// main dispatches top-level CLI commands to their handlers.
 func main() {
 	args := os.Args[1:]
 
@@ -84,6 +85,7 @@ func main() {
 	}
 }
 
+// commandHelp prints general or command-specific usage text.
 func commandHelp(args []string) {
 	helpString := `
 	Machina - asynchronous job execution engine
@@ -292,6 +294,7 @@ func commandHelp(args []string) {
 	}
 }
 
+// commandDescription prints a short project description before help output.
 func commandDescription() {
 	descriptionString := `
 	Machina — asynchronous job execution engine
@@ -303,6 +306,7 @@ func commandDescription() {
 	printHelpBlock(descriptionString)
 }
 
+// commandConfig prints or updates config.json values from CLI flags.
 func commandConfig(args []string) error {
 	if len(args) == 0 {
 		config, err := readConfigJSON()
@@ -396,6 +400,7 @@ func commandConfig(args []string) error {
 	return nil
 }
 
+// commandStart boots the engine and HTTP server until interrupted.
 func commandStart(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -466,6 +471,7 @@ func commandStart(args []string) error {
 	return nil
 }
 
+// commandShutdown sends a shutdown request to a running Machina server.
 func commandShutdown(args []string) error {
 	port, remaining, err := parsePortFlag(args, defaultPort())
 	if err != nil {
@@ -490,6 +496,7 @@ func commandShutdown(args []string) error {
 	return nil
 }
 
+// commandHealth fetches and prints the server health payload.
 func commandHealth(args []string) error {
 	port, remaining, err := parsePortFlag(args, defaultPort())
 	if err != nil {
@@ -533,6 +540,7 @@ var jobTypeName = map[string]string{
 	"csv-transform": "csv_transform",
 }
 
+// commandSubmit translates a CLI job alias into an API submission payload.
 func commandSubmit(args []string) {
 	if len(args) < 3 {
 		commandHelp([]string{"help", "submit"})
@@ -580,6 +588,7 @@ func commandSubmit(args []string) {
 	printJSON(resp)
 }
 
+// commandStatus fetches one job status or polls until it reaches a terminal state.
 func commandStatus(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("missing job id")
@@ -643,6 +652,7 @@ func commandStatus(args []string) error {
 	return nil
 }
 
+// commandList fetches all jobs and optionally filters them client-side by status.
 func commandList(args []string) error {
 	port, listFlags, err := parsePortFlag(args, defaultPort())
 	if err != nil {
@@ -695,6 +705,7 @@ func commandList(args []string) error {
 	return nil
 }
 
+// commandProfile prints the available scaffolding profiles for job generation.
 func commandProfile(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("profile does not accept flags")
@@ -704,6 +715,7 @@ func commandProfile(args []string) error {
 	return nil
 }
 
+// commandTypes prints the registered runtime job types.
 func commandTypes(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("types does not accept flags")
@@ -717,6 +729,7 @@ func commandTypes(args []string) error {
 	return nil
 }
 
+// commandRegister generates a job scaffold, opens it in an editor, and registers it.
 func commandRegister(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: machina register <profile> <job-name>")
@@ -799,6 +812,7 @@ func commandRegister(args []string) error {
 	return nil
 }
 
+// commandUnregister removes a generated job file and its runtime registration.
 func commandUnregister(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: machina unregister <job-name>")
@@ -845,6 +859,24 @@ func commandUnregister(args []string) error {
 	return nil
 }
 
+// resolveEditor finds the best available editor from env vars or common fallbacks.
+func resolveEditor() (string, error) {
+	for _, key := range []string{"VISUAL", "EDITOR"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value, nil
+		}
+	}
+
+	for _, candidate := range []string{"nano", "vim", "vi"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
+}
+
+// openEditor launches the resolved editor against the generated temp file.
 func openEditor(path string) error {
 	editor, err := resolveEditor()
 	if err != nil {
@@ -865,22 +897,7 @@ func openEditor(path string) error {
 	return nil
 }
 
-func resolveEditor() (string, error) {
-	for _, key := range []string{"VISUAL", "EDITOR"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value, nil
-		}
-	}
-
-	for _, candidate := range []string{"nano", "vim", "vi"} {
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path, nil
-		}
-	}
-
-	return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
-}
-
+// readConfigJSON loads config.json into the shared API config struct.
 func readConfigJSON() (api.Config, error) {
 	data, err := os.ReadFile("config.json")
 	if err != nil {
@@ -894,6 +911,7 @@ func readConfigJSON() (api.Config, error) {
 	return config, nil
 }
 
+// writeConfigJSON persists config.json updates in a stable indented format.
 func writeConfigJSON(config api.Config) error {
 	updated, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -907,12 +925,14 @@ func writeConfigJSON(config api.Config) error {
 	return nil
 }
 
+// printJSON writes indented JSON responses to stdout for CLI commands.
 func printJSON(content any) {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.Encode(content)
 }
 
+// printHelpBlock strips raw-string indentation before printing help text.
 func printHelpBlock(text string) {
 	lines := strings.Split(strings.Trim(text, "\n"), "\n")
 	for i, line := range lines {
@@ -921,6 +941,7 @@ func printHelpBlock(text string) {
 	fmt.Println(strings.Join(lines, "\n"))
 }
 
+// pollURL repeatedly fetches a job status endpoint until the job finishes or the context ends.
 func pollURL(ctx context.Context, url string, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
