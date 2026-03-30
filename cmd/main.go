@@ -31,22 +31,15 @@ func main() {
 	}
 
 	switch args[0] {
-	case "start", "s":
+	case "start":
 		slog.Info("Starting the application")
-		err := commandStart()
+		err := commandStart(args[1:])
 		if err != nil {
 			fmt.Printf("Error starting the application: %v", err)
 		}
 		return
-	case "help":
-		commandHelp(args)
-		return
-	case "description":
-		commandDescription()
-		commandHelp(args)
-		return
-	case "config":
-		err := commandConfig(args)
+	case "shutdown":
+		err := commandShutdown()
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -56,17 +49,9 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error connecting to server: %v", err)
 		}
-	case "list":
-		err := commandList(args)
-		if err != nil {
-			fmt.Println(err)
-		}
 		return
-	case "shutdown":
-		err := commandShutdown()
-		if err != nil {
-			fmt.Println(err)
-		}
+	case "submit":
+		commandSubmit(args[1:])
 		return
 	case "status":
 		err := commandStatus(args)
@@ -74,8 +59,27 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "list":
+		err := commandList(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	case "config":
+		err := commandConfig(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "version":
 
+	case "help":
+		commandHelp(args)
+		return
+	case "description":
+		commandDescription()
+		commandHelp(args)
+		return
 	default:
 		fmt.Printf("Unknown command: %s", args[0])
 		commandHelp(args)
@@ -92,10 +96,11 @@ func commandHelp(args []string) {
 	Commands:
 	  start                              Start the server and engine
 	  shutdown							 Shutdown the server and engine
-	  status                             Get the status of a job
-	  submit 							 Submit a job
-	  list                               List all jobs
 	  health                             Check server health
+	  submit 							 Submit a job
+	  status                             Get the status of a job
+	  list                               List all jobs
+	  profile							 List of job Profiles available
 	  config                             View/Change config values
 	  version                            Print version
 	  help 			                     Show help for a command
@@ -114,30 +119,43 @@ func commandHelp(args []string) {
 	Example:
 	  machina start --port 9090 --workers 8 --queue-size 200`
 
+	shutdownString := `
+    Usage: machina shutdown`
+
 	healthString := `
 	Usage: machina health [--port]
 
 	Example:
   		machina health --port 9090`
 
-    shutdownString := `
-    Usage: machina shutdown`
-    
-	configString := `
-	Usage: machina config [flags]
+	submitString := `
+	Usage: machina submit <job> <input> <output> [flags]
+
+	Description:
+	  Submit a job to the Machina server. The command sends the job type and
+	  payload to the server and prints the accepted job response as JSON.
+
+	Jobs:
+	  file-encrypt   Encrypt files from an input folder into an output folder
+	  csv-transform  Transform a CSV file into an output CSV file
 
 	Flags:
-	  --port            <port>   Listen port            (default: 8080, json: port)
-	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCzount)`
+	  --port <port>  Server port (default: config.json port or 8080 fallback)
+
+	Examples:
+	  machina submit file-encrypt ./input ./encrypted
+	  machina submit csv-transform ./input.csv ./output.csv
+	  machina submit csv-transform ./input.csv ./output.csv --port 9090`
 
 	statusString := `
 	Usage: machina status <id> [flags]
 
 	Flags:
 	  --watch              Continuously poll the server for status updates
-	                       until the job reaches a terminal state (succeeded|failed).
+	                       until the job reaches a terminal state (completed|failed).
 	  --interval <secs>    Polling interval in seconds when using --watch
 	                      (default: 5)
+	  --port <port>        Server port override
 
 	Examples:
 	  machina status d3adb33f
@@ -160,22 +178,31 @@ func commandHelp(args []string) {
 	  machina list
 	  machina list --status running`
 
+	configString := `
+	Usage: machina config [flags]
+
+	Flags:
+	  --port            <port>   Listen port            (default: 8080, json: port)
+	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCzount)`
+
 	if len(args) == 1 {
 		fmt.Print(helpString)
 	} else if len(args) == 2 {
 		switch args[1] {
 		case "start":
 			fmt.Print(startString)
+		case "shutdown":
+			fmt.Print(shutdownString)
 		case "health":
 			fmt.Print(healthString)
-		case "shurdown":
-			fmt.Print(shutdownString)
-		case "config":
-			fmt.Print(configString)
+		case "submit":
+			fmt.Print(submitString)
 		case "status":
 			fmt.Print(statusString)
 		case "list":
 			fmt.Print(listString)
+		case "config":
+			fmt.Print(configString)
 		default:
 			fmt.Printf("Invalid flag %s", args[1])
 		}
@@ -287,13 +314,50 @@ func commandConfig(args []string) error {
 	return nil
 }
 
-func commandStart() error {
+func commandStart(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	config, err := readConfigJSON()
 	if err != nil {
 		return fmt.Errorf("Error reading Config file")
+	}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--port":
+			if i+1 >= len(args) {
+				return fmt.Errorf("Not enough arguments for --port")
+			}
+			port, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid port: %s (must be a number)", args[i+1])
+			}
+			config.Port = port
+			i++
+		case "--workers":
+			if i+1 >= len(args) {
+				return fmt.Errorf("Not enough arguments for --workers")
+			}
+			workers, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid workers: %s (must be a number)", args[i+1])
+			}
+			config.WorkerCount = workers
+			i++
+		case "--queue-size":
+			if i+1 >= len(args) {
+				return fmt.Errorf("Not enough arguments for --queue-size")
+			}
+			queueSize, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid queue size: %s (must be a number)", args[i+1])
+			}
+			config.QueueSize = queueSize
+			i++
+		default:
+			return fmt.Errorf("invalid start flag: %s", args[i])
+		}
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -320,6 +384,27 @@ func commandStart() error {
 	return nil
 }
 
+func commandShutdown() error {
+	config, err := readConfigJSON()
+	if err != nil {
+		return fmt.Errorf("Error reading config file")
+	}
+
+	url := "http://localhost:" + strconv.Itoa(config.Port) + "/shutdown"
+
+	resp, statusCode, err := api.HttpPOST(url, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to send shutdown request: %v", err)
+	}
+
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("Server returned %d: %s", statusCode, string(resp))
+	}
+
+	fmt.Println("Shutdown signal sent successfully")
+	return nil
+}
+
 func commandHealth() error {
 	config, err := readConfigJSON()
 	if err != nil {
@@ -340,6 +425,84 @@ func commandHealth() error {
 	return nil
 }
 
+var jobPayload = map[string]func(string, string) map[string]any{
+	"file-encrypt": func(inputPath, outputPath string) map[string]any {
+		return map[string]any{
+			"folder_path": inputPath,
+			"output_path": outputPath,
+		}
+	},
+	"csv-transform": func(inputPath, outputPath string) map[string]any {
+		return map[string]any{
+			"input_path":  inputPath,
+			"output_path": outputPath,
+		}
+	},
+}
+
+var jobTypeName = map[string]string{
+	"file-encrypt":  "file_encrypt",
+	"csv-transform": "csv_transform",
+}
+
+func commandSubmit(args []string) {
+	if len(args) < 3 {
+		commandHelp([]string{"help", "submit"})
+		os.Exit(1)
+	}
+
+	jobName := args[0]
+	inputPath := args[1]
+	outputPath := args[2]
+
+	port := "8080"
+	if config, err := readConfigJSON(); err == nil && config.Port != 0 {
+		port = strconv.Itoa(config.Port)
+	}
+
+	for i := 3; i < len(args); i++ {
+		if args[i] == "--port" {
+			if i+1 >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --port\n")
+				os.Exit(1)
+			}
+			i++
+			port = args[i]
+		} else {
+			fmt.Fprintf(os.Stderr, "unknown flag %q\n", args[i])
+			os.Exit(1)
+		}
+	}
+
+	builder, ok := jobPayload[jobName]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unknown job name %q; valid names: file-encrypt, csv-transform\n", jobName)
+		os.Exit(1)
+	}
+
+	typeName := jobTypeName[jobName]
+	body, code, err := api.HttpPOST("http://localhost:"+port+"/jobs", map[string]any{
+		"type":    typeName,
+		"payload": builder(inputPath, outputPath),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not reach server: %v\n", err)
+		os.Exit(1)
+	}
+	if code != http.StatusAccepted {
+		fmt.Fprintf(os.Stderr, "server returned %d: %s\n", code, strings.TrimSpace(string(body)))
+		os.Exit(1)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid response: %v\n", err)
+		os.Exit(1)
+	}
+
+	printJSON(resp)
+}
+
 func commandStatus(args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("No job ID provided")
@@ -351,7 +514,7 @@ func commandStatus(args []string) error {
 	}
 
 	JobID := args[1]
-	url := "http://localhost:" + strconv.Itoa(config.Port) + "/jobs/" + JobID
+	port := config.Port
 
 	statusFlags := args[2:]
 	var watch bool
@@ -374,10 +537,22 @@ func commandStatus(args []string) error {
 			}
 			interval = time.Duration(secs) * time.Second
 			i++
+		case "--port":
+			if i+1 >= len(statusFlags) {
+				return fmt.Errorf("Not enough arguments for --port")
+			}
+			p, err := strconv.Atoi(statusFlags[i+1])
+			if err != nil {
+				return fmt.Errorf("Invalid port: %s (must be a number)", statusFlags[i+1])
+			}
+			port = p
+			i++
 		default:
 			return fmt.Errorf("invalid status flag: %s", statusFlags[i])
 		}
 	}
+
+	url := "http://localhost:" + strconv.Itoa(port) + "/jobs/" + JobID
 
 	if watch {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -460,27 +635,6 @@ func commandList(args []string) error {
 	return nil
 }
 
-func commandShutdown() error {
-	config, err := readConfigJSON()
-	if err != nil {
-		return fmt.Errorf("Error reading config file")
-	}
-
-	url := "http://localhost:" + strconv.Itoa(config.Port) + "/shutdown"
-
-	resp, statusCode, err := api.HttpPOST(url, nil)
-	if err != nil {
-		return fmt.Errorf("Failed to send shutdown request: %v", err)
-	}
-
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("Server returned %d: %s", statusCode, string(resp))
-	}
-
-	fmt.Println("Shutdown signal sent successfully")
-	return nil
-}
-
 func readConfigJSON() (api.Config, error) {
 	data, err := os.ReadFile("config.json")
 	if err != nil {
@@ -532,7 +686,7 @@ func pollURL(ctx context.Context, url string, interval time.Duration) error {
 		printJSON(status)
 
 		if s, ok := status["status"].(string); ok {
-			if s == "succeeded" || s == "failed" {
+			if s == "succeeded" || s == "completed" || s == "failed" {
 				return nil
 			}
 		}
