@@ -34,13 +34,13 @@ func main() {
 		slog.Info("Starting the application")
 		err := commandStart()
 		if err != nil {
-			fmt.Printf("Error starting the application: %e", err)
+			fmt.Printf("Error starting the application: %v", err)
 		}
 		return
-	case "help", "h":
+	case "help":
 		commandHelp(args)
 		return
-	case "description", "d":
+	case "description":
 		commandDescription()
 		commandHelp(args)
 		return
@@ -55,7 +55,13 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error connecting to server: %v", err)
 		}
-	case "version", "v":
+	case "status":
+		err := commandStatus(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	case "version":
 
 	default:
 		fmt.Printf("Unknown command: %s", args[0])
@@ -106,6 +112,7 @@ func commandHelp(args []string) {
 	Flags:
 	  --port            <port>   Listen port            (default: 8080, json: port)
 	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCount)`
+
 	if len(args) == 1 {
 		fmt.Print(helpString)
 	} else if len(args) == 2 {
@@ -136,21 +143,15 @@ func commandDescription() {
 func commandConfig(args []string) error {
 	configArgs := args[1:]
 	if len(configArgs) == 0 {
-		data, err := os.ReadFile("config.json")
+		config, err := readConfigJSON()
 		if err != nil {
-			return fmt.Errorf("Config file is missing")
-		}
-		var config api.Config
-
-		err = json.Unmarshal(data, &config)
-		if err != nil {
-			return fmt.Errorf("invalid config file")
+			return fmt.Errorf("Error reading Config file")
 		}
 		fmt.Println("Version:", config.Version)
 		fmt.Println("Port:", config.Port)
 		fmt.Println("Worker count:", config.WorkerCount)
 		fmt.Println("Queue size:", config.QueueSize)
-
+		return nil
 	}
 	if len(configArgs)%2 != 0 {
 		return fmt.Errorf("Not enough arguments")
@@ -237,14 +238,9 @@ func commandStart() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	data, err := os.ReadFile("config.json")
+	config, err := readConfigJSON()
 	if err != nil {
-		return fmt.Errorf("Config file is missing")
-	}
-	var config api.Config
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		return fmt.Errorf("invalid config file")
+		return fmt.Errorf("Error reading Config file")
 	}
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -272,23 +268,17 @@ func commandStart() error {
 }
 
 func commandHealth() error {
-	data, err := os.ReadFile("config.json")
+	config, err := readConfigJSON()
 	if err != nil {
-		return fmt.Errorf("Config file is missing")
+		return fmt.Errorf("Error reading Config file")
 	}
-	var config api.Config
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		return fmt.Errorf("Invalid config file")
-	}
+
 	url := "http://localhost:" + strconv.Itoa(config.Port) + "/health"
 	response, statusCode, err := api.HttpGET(url)
 	if err != nil {
-		fmt.Println(fmt.Errorf("Couldn't reach server: %v", err))
 		return fmt.Errorf("Couldn't reach server: %v", err)
 	}
 	if statusCode != http.StatusOK {
-		fmt.Println(fmt.Errorf("Server returned %d\n", statusCode))
 		return fmt.Errorf("Server returned %d\n", statusCode)
 	}
 	var health map[string]any
@@ -297,6 +287,46 @@ func commandHealth() error {
 	return nil
 }
 
+func commandStatus(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("No job ID provided")
+	}
+
+	config, err := readConfigJSON()
+	if err != nil {
+		return fmt.Errorf("Error reading Config file")
+	}
+
+	JobID := args[1]
+	url := "http://localhost:" + strconv.Itoa(config.Port) + "/jobs/" + JobID
+	response, statusCode, err := api.HttpGET(url)
+	if err != nil {
+		return fmt.Errorf("Status error: %v", err)
+	}
+	if statusCode != http.StatusOK {
+		responseString := string(response)
+
+		return fmt.Errorf("Server returned %d \n%s", statusCode, responseString)
+	}
+
+	var status map[string]any
+	json.Unmarshal(response, &status)
+	printJSON(status)
+	return nil
+}
+
+func readConfigJSON() (api.Config, error) {
+	data, err := os.ReadFile("config.json")
+	if err != nil {
+		return api.Config{}, err
+	}
+	var config api.Config
+	err = json.Unmarshal(data, &config)
+	if err != nil {
+		return api.Config{}, err
+	}
+	return config, nil
+}
 func writeConfigJSON(config api.Config) error {
 	updated, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
