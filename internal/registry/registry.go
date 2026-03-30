@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"sort"
+
 	"github.com/ri5hii/Machina/internal/jobs"
 )
 
@@ -27,4 +29,13 @@ func (reg *Registry) Register(jobType string, payloadConstructor PayloadConstruc
 func (reg *Registry) GetPayloadConstructor(jobType string) (PayloadConstructor, bool) {
 	payloadConstructor, exists := reg.constructors[jobType]
 	return payloadConstructor, exists
+}
+
+func (reg *Registry) Profiles() []string {
+	profiles := make([]string, 0, len(reg.constructors))
+	for jobType := range reg.constructors {
+		profiles = append(profiles, jobType)
+	}
+	sort.Strings(profiles)
+	return profiles
 }

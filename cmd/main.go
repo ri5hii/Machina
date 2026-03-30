@@ -65,6 +65,12 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "profile":
+		err := commandProfile(args)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "config":
 		err := commandConfig(args)
 		if err != nil {
@@ -178,6 +184,16 @@ func commandHelp(args []string) {
 	  machina list
 	  machina list --status running`
 
+	profileString := `
+	Usage: machina profile
+
+	Description:
+	  Print the registered job profiles available to the Machina runtime.
+	  The output is a JSON array of registered job type names.
+
+	Example:
+	  machina profile`
+
 	configString := `
 	Usage: machina config [flags]
 
@@ -201,6 +217,8 @@ func commandHelp(args []string) {
 			fmt.Print(statusString)
 		case "list":
 			fmt.Print(listString)
+		case "profile":
+			fmt.Print(profileString)
 		case "config":
 			fmt.Print(configString)
 		default:
@@ -632,6 +650,17 @@ func commandList(args []string) error {
 	}
 
 	printJSON(list)
+	return nil
+}
+
+func commandProfile(args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("profile does not accept flags")
+	}
+
+	reg := registry.New()
+	reg.RegisterJob()
+	printJSON(reg.Profiles())
 	return nil
 }
 
