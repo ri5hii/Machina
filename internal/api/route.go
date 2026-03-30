@@ -10,6 +10,7 @@ func (server *Server) routes() http.Handler {
 	mux.HandleFunc("GET /jobs", server.listHandler)
 	mux.HandleFunc("POST /jobs", server.submitHandler)
 	mux.HandleFunc("GET /jobs/{id}", server.statusHandler)
+	mux.HandleFunc("POST /shutdown", server.handleShutdown)
 
 	return mux
 }

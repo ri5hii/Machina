@@ -65,7 +65,6 @@ func (server *Server) Handler() http.Handler {
 
 func (server *Server) Start() error {
 	go func() {
-		//handle the err when the server is shutdown, shouldnt log it in that case
 		err := server.http.ListenAndServe()
 		if err != nil {
 			if err == http.ErrServerClosed {

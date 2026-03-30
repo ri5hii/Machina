@@ -62,6 +62,12 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	case "shutdown":
+		err := commandShutdown()
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
 	case "status":
 		err := commandStatus(args)
 		if err != nil {
@@ -85,6 +91,7 @@ func commandHelp(args []string) {
 
 	Commands:
 	  start                              Start the server and engine
+	  shutdown							 Shutdown the server and engine
 	  status                             Get the status of a job
 	  submit 							 Submit a job
 	  list                               List all jobs
@@ -113,12 +120,15 @@ func commandHelp(args []string) {
 	Example:
   		machina health --port 9090`
 
+    shutdownString := `
+    Usage: machina shutdown`
+    
 	configString := `
 	Usage: machina config [flags]
 
 	Flags:
 	  --port            <port>   Listen port            (default: 8080, json: port)
-	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCount)`
+	  --workerCount     <n>      Worker goroutine count (default: 4,    json: workerCzount)`
 
 	statusString := `
 	Usage: machina status <id> [flags]
@@ -158,6 +168,8 @@ func commandHelp(args []string) {
 			fmt.Print(startString)
 		case "health":
 			fmt.Print(healthString)
+		case "shurdown":
+			fmt.Print(shutdownString)
 		case "config":
 			fmt.Print(configString)
 		case "status":
@@ -445,6 +457,27 @@ func commandList(args []string) error {
 	}
 
 	printJSON(list)
+	return nil
+}
+
+func commandShutdown() error {
+	config, err := readConfigJSON()
+	if err != nil {
+		return fmt.Errorf("Error reading config file")
+	}
+
+	url := "http://localhost:" + strconv.Itoa(config.Port) + "/shutdown"
+
+	resp, statusCode, err := api.HttpPOST(url, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to send shutdown request: %v", err)
+	}
+
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("Server returned %d: %s", statusCode, string(resp))
+	}
+
+	fmt.Println("Shutdown signal sent successfully")
 	return nil
 }
 
