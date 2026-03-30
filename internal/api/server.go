@@ -13,6 +13,7 @@ import (
 
 	"github.com/ri5hii/Machina/internal/engine"
 	"github.com/ri5hii/Machina/internal/registry"
+	"github.com/ri5hii/Machina/internal/storage"
 )
 
 const (
@@ -33,15 +34,17 @@ type Server struct {
 	http     *http.Server
 	logger   *slog.Logger
 	eng      *engine.Engine
+	store    *storage.JobStore
 	registry *registry.Registry
 	version  string
 	status   atomic.Value
 }
 
-func New(config Config, eng *engine.Engine, log *slog.Logger, reg *registry.Registry) *Server {
+func New(config Config, eng *engine.Engine, store *storage.JobStore, log *slog.Logger, reg *registry.Registry) *Server {
 	server := &Server{
 		logger:   log,
 		eng:      eng,
+		store:    store,
 		version:  config.Version,
 		registry: reg,
 	}

@@ -6,8 +6,8 @@ import (
 )
 
 type response struct {
-	ServerStatus string `json:"server-status"`
-	EngineStatus string `json:"engine-status"`
+	ServerStatus string `json:"serverStatus"`
+	EngineStatus string `json:"engineStatus"`
 	Port         string `json:"port"`
 	Version      string `json:"version"`
 }

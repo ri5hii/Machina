@@ -253,7 +253,7 @@ func commandStart() error {
 	eng := engine.New(log, queue, store, config.WorkerCount)
 	reg := registry.New()
 	reg.RegisterJob()
-	server := api.New(config, eng, log, reg)
+	server := api.New(config, eng, store, log, reg)
 
 	eng.Start(ctx)
 	server.Start()
