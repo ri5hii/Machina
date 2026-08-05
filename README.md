@@ -116,18 +116,6 @@ machina benchmark --workers 4 --queue-size 100 --iterations 5
 machina benchmark --csv-input tests/data/csv/input/employees_01.csv --folder tests/data/encrypt/input
 ```
 
-Flags:
-
-| Flag | Default | Description |
-|---|---|---|
-| `--workers` | `config.json` | Worker pool size |
-| `--queue-size` | `config.json` | Bounded queue capacity |
-| `--iterations` | `3` | Passes per job type; median is reported |
-| `--csv-input` | `tests/data/csv/input/employees_01.csv` | CSV file for `csv_transform` |
-| `--folder` | `tests/data/encrypt/input` | Folder for `file_encrypt` |
-| `--key` | `tests/data/keys/default.key` | 32-byte AES key |
-
-Measured results (medians of 3 runs, 12th Gen Intel i7-12700H, from `bench/benchmark-results.txt`):
 
 | Benchmark | Config | Median | Throughput |
 |---|---|---|---|
@@ -140,3 +128,17 @@ Measured results (medians of 3 runs, 12th Gen Intel i7-12700H, from `bench/bench
 | FileEncrypt (AES-256-GCM) | 4 workers | 44.8 ms per 104.9 MB | 2.34 GB/s |
 
 Numbers vary by hardware; the CSV transform is I/O-bound, while AES-256-GCM is limited by AES-NI throughput.
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--workers` | `config.json` | Worker pool size |
+| `--queue-size` | `config.json` | Bounded queue capacity |
+| `--iterations` | `3` | Passes per job type; median is reported |
+| `--csv-input` | `tests/data/csv/input/employees_01.csv` | CSV file for `csv_transform` |
+| `--folder` | `tests/data/encrypt/input` | Folder for `file_encrypt` |
+| `--key` | `tests/data/keys/default.key` | 32-byte AES key |
+
+
+
+
