@@ -2,7 +2,7 @@
 
 This guide is for using `machina` from the command line.
 
-For architecture and implementation details, see [README.md](README.md).
+For architecture and implementation details, see [docs/architecture.md](docs/architecture.md).
 
 ## Build
 
