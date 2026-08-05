@@ -267,6 +267,25 @@ func commandHelp(args []string) {
 	  machina config --port 9090
 	  machina config --workers 6 --queue-size 50`
 
+	benchmarkString := `
+	Usage: machina benchmark [flags]
+
+	Description:
+	  Run the built-in job types through the engine and print a JSON report of
+	  median throughput (csv_transform rows/sec and file_encrypt MB/sec).
+
+	Flags:
+	  --workers     <n>      Worker goroutine count (default: config.json or 9)
+	  --queue-size  <n>      Bounded queue capacity   (default: config.json or 8)
+	  --iterations  <n>      Passes per job type      (default: 3)
+	  --csv-input   <path>   CSV input file           (default: tests/data/csv/input/employees_01.csv)
+	  --folder      <path>   Encrypt input folder     (default: tests/data/encrypt/input)
+	  --key         <path>   Encryption key file      (default: tests/data/keys/default.key)
+
+	Examples:
+	  machina benchmark
+	  machina benchmark --workers 4 --queue-size 100 --iterations 5`
+
 	if len(args) == 1 {
 		printHelpBlock(helpString)
 	} else if len(args) == 2 {
@@ -293,6 +312,8 @@ func commandHelp(args []string) {
 			printHelpBlock(typesString)
 		case "config":
 			printHelpBlock(configString)
+		case "benchmark":
+			printHelpBlock(benchmarkString)
 		default:
 			fmt.Printf("unknown help topic: %s\n", args[1])
 		}

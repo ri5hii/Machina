@@ -263,9 +263,7 @@ machina benchmark [flags]                      Benchmark built-in jobs (JSON out
 
 ## Benchmarks
 
-`machina benchmark` runs both built-in job types through the real engine pipeline
-(submit → worker pool → complete) and prints a structured JSON report with median
-throughput. Run it from the repo root so the sample test data is found:
+`machina benchmark` runs both built-in job types through the real engine pipeline (submit → worker pool → complete) and prints a structured JSON report with median throughput. Run it from the repo root so the sample test data is found:
 
 ```
 machina benchmark
@@ -284,40 +282,19 @@ Flags:
 | `--folder` | `tests/data/encrypt/input` | Folder for `file_encrypt` |
 | `--key` | `tests/data/keys/default.key` | 32-byte AES key |
 
-Example output (measured on 12th Gen Intel i7-12700H):
+Measured results (medians of 3 runs, 12th Gen Intel i7-12700H, from `bench/benchmark-results.txt`):
 
-```json
-{
-  "command": "benchmark",
-  "engine": {
-    "workerCount": 9,
-    "queuesize": 8,
-    "iterations": 3
-  },
-  "results": [
-    {
-      "jobType": "csv_transform",
-      "iterations": 3,
-      "rowsProcessed": 30000,
-      "medianDurationMs": 21.7,
-      "rowsPerSec": 460953
-    },
-    {
-      "jobType": "file_encrypt",
-      "iterations": 3,
-      "filesProcessed": 330,
-      "bytesProcessed": 314595180,
-      "medianDurationMs": 46.2,
-      "mbPerSec": 2267
-    }
-  ]
-}
-```
+| Benchmark | Config | Median | Throughput |
+|---|---|---|---|
+| SubmitJobs | 9 workers / queue 8 (default) | 4,879 ns/op | 205k jobs/s |
+| SubmitJobs | 4 workers / queue 100 | 3,965 ns/op | 252k jobs/s |
+| SubmitJobs | 9 workers / queue 100 | 4,477 ns/op | 223k jobs/s |
+| BatchCSV | 9 workers | 17.3 ms per 10k rows | 579k rows/s |
+| BatchCSV | 4 workers | 17.9 ms per 10k rows | 558k rows/s |
+| FileEncrypt (AES-256-GCM) | 9 workers | 49.7 ms per 104.9 MB | 2.11 GB/s |
+| FileEncrypt (AES-256-GCM) | 4 workers | 44.8 ms per 104.9 MB | 2.34 GB/s |
 
-The same harness powers the reproducible runs recorded in `bench/benchmark-results.txt`
-(csv_transform rows/sec, AES-256-GCM MB/s, and engine jobs/s across worker/queue
-configurations). Numbers vary by hardware; the CSV transform is I/O-bound, while
-AES-256-GCM is limited by AES-NI throughput.
+Numbers vary by hardware; the CSV transform is I/O-bound, while AES-256-GCM is limited by AES-NI throughput.
 
 ---
 
