@@ -1,0 +1,49 @@
+# Machina benchmark results
+# Run: 2026-08-05T07:11:20Z
+# Host: Linux,7.1.5-201.fc44.x86_64,x86_64,GNU/Linux | CPU: 12th Gen Intel(R) Core(TM) i7-12700H
+# Cmd: go test ./bench/ -run '^$' -bench . -benchmem -count=3
+
+goos: linux
+goarch: amd64
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkSubmitJobs/workers=4/queue=8-20         	  232780	      4985 ns/op	    200590 jobs/s	     339 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=4/queue=8-20         	  261133	      4963 ns/op	    201492 jobs/s	     326 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=4/queue=8-20         	  261300	      4942 ns/op	    202350 jobs/s	     326 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=4/queue=100-20       	  328299	      3748 ns/op	    266791 jobs/s	     293 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=4/queue=100-20       	  337742	      3965 ns/op	    252198 jobs/s	     291 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=4/queue=100-20       	  318160	      3966 ns/op	    252137 jobs/s	     296 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=8-20         	  256765	      4894 ns/op	    204328 jobs/s	     324 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=8-20         	  265918	      4806 ns/op	    208074 jobs/s	     320 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=8-20         	  261398	      4879 ns/op	    204980 jobs/s	     322 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=100-20       	  269820	      4496 ns/op	    222417 jobs/s	     312 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=100-20       	  304018	      4477 ns/op	    223357 jobs/s	     300 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=9/queue=100-20       	  286440	      4426 ns/op	    225923 jobs/s	     305 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=8-20        	  258093	      4887 ns/op	    204610 jobs/s	     322 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=8-20        	  254512	      4835 ns/op	    206813 jobs/s	     324 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=8-20        	  260598	      4852 ns/op	    206086 jobs/s	     321 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=100-20      	  274554	      4520 ns/op	    221256 jobs/s	     310 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=100-20      	  290352	      4482 ns/op	    223114 jobs/s	     304 B/op	       6 allocs/op
+BenchmarkSubmitJobs/workers=10/queue=100-20      	  274810	      4414 ns/op	    226573 jobs/s	     310 B/op	       6 allocs/op
+BenchmarkBatchCSV/workers=4-20                   	      70	  17909065 ns/op	     10000 rows/op	 7788990 B/op	  128057 allocs/op
+BenchmarkBatchCSV/workers=4-20                   	      66	  17549942 ns/op	     10000 rows/op	 7624961 B/op	  127732 allocs/op
+BenchmarkBatchCSV/workers=4-20                   	      67	  18457031 ns/op	     10000 rows/op	 7869511 B/op	  128236 allocs/op
+BenchmarkBatchCSV/workers=9-20                   	      68	  17263108 ns/op	     10000 rows/op	 7677829 B/op	  127834 allocs/op
+BenchmarkBatchCSV/workers=9-20                   	      66	  17114203 ns/op	     10000 rows/op	 7646662 B/op	  127769 allocs/op
+BenchmarkBatchCSV/workers=9-20                   	      60	  17911084 ns/op	     10000 rows/op	 7689119 B/op	  127854 allocs/op
+BenchmarkBatchCSV/workers=10-20                  	      64	  18232688 ns/op	     10000 rows/op	 7703449 B/op	  127892 allocs/op
+BenchmarkBatchCSV/workers=10-20                  	      74	  18210516 ns/op	     10000 rows/op	 7635403 B/op	  127755 allocs/op
+BenchmarkBatchCSV/workers=10-20                  	      67	  17712598 ns/op	     10000 rows/op	 7607695 B/op	  127695 allocs/op
+BenchmarkEncrypt/workers=4-20                    	      25	  47429342 ns/op	 104865060 bytes/op	211698698 B/op	    2490 allocs/op
+BenchmarkEncrypt/workers=4-20                    	      26	  44818151 ns/op	 104865060 bytes/op	211699192 B/op	    2490 allocs/op
+BenchmarkEncrypt/workers=4-20                    	      24	  44632678 ns/op	 104865060 bytes/op	211699992 B/op	    2497 allocs/op
+BenchmarkEncrypt/workers=9-20                    	      27	  45516080 ns/op	 104865060 bytes/op	211702269 B/op	    2502 allocs/op
+BenchmarkEncrypt/workers=9-20                    	      22	  51133340 ns/op	 104865060 bytes/op	211699039 B/op	    2495 allocs/op
+BenchmarkEncrypt/workers=9-20                    	      21	  49707375 ns/op	 104865060 bytes/op	211700419 B/op	    2494 allocs/op
+BenchmarkEncrypt/workers=10-20                   	      25	  45152936 ns/op	 104865060 bytes/op	211699328 B/op	    2497 allocs/op
+BenchmarkEncrypt/workers=10-20                   	      25	  46454242 ns/op	 104865060 bytes/op	211698131 B/op	    2489 allocs/op
+BenchmarkEncrypt/workers=10-20                   	      25	  45590637 ns/op	 104865060 bytes/op	211699993 B/op	    2495 allocs/op
+
+# Medians
+# SubmitJobs (9 workers / queue 8, default config): ~207k jobs/s
+# BatchCSV (9 workers): ~17.5ms per 10k rows = ~570k rows/s
+# Encrypt AES-256-GCM (9 workers): ~45.7ms per 104.9MB = ~2.3 GB/s

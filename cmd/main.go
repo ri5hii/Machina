@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/ri5hii/Machina/internal/api"
+	"github.com/ri5hii/Machina/internal/bench"
 	"github.com/ri5hii/Machina/internal/engine"
 	"github.com/ri5hii/Machina/internal/jobs"
 	"github.com/ri5hii/Machina/internal/registry"
@@ -69,6 +70,9 @@ func main() {
 	case "config":
 		failCommand(commandConfig(args[1:]))
 		return
+	case "benchmark":
+		failCommand(commandBenchmark(args[1:]))
+		return
 	case "version":
 
 	case "help":
@@ -104,6 +108,7 @@ func commandHelp(args []string) {
 	  profile     List available job scaffolding profiles
 	  types       List registered job types
 	  config      View/change config values
+	  benchmark   Benchmark built-in job types (JSON output)
 	  version     Print version
 	  help        Show help for a command
 
@@ -304,6 +309,107 @@ func commandDescription() {
 	work execution, giving you a structured runtime for asynchronous, resource-controlled processing.`
 
 	printHelpBlock(descriptionString)
+}
+
+// commandBenchmark runs the built-in job types through the engine and prints a
+// structured JSON report with median throughput.
+func commandBenchmark(args []string) error {
+	// The defaults target the repo's sample data; paths are overridable per flag.
+	opts := bench.BenchmarkOptions{Iterations: 3}
+	csvInput := "tests/data/csv/input/employees_01.csv"
+	folderPath := "tests/data/encrypt/input"
+	keyPath := "tests/data/keys/default.key"
+
+	// config.json worker/queue settings apply when present.
+	if config, err := readConfigJSON(); err == nil {
+		opts.Workers = config.WorkerCount
+		opts.QueueSize = config.QueueSize
+	}
+	if opts.Workers == 0 {
+		opts.Workers = 9
+	}
+	if opts.QueueSize == 0 {
+		opts.QueueSize = 8
+	}
+
+	// Manual flag loop matches the repo's CLI convention.
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--workers":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --workers")
+			}
+			workers, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid workers: %s (must be a number)", args[i+1])
+			}
+			opts.Workers = workers
+			i++
+		case "--queue-size":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --queue-size")
+			}
+			queueSize, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid queue-size: %s (must be a number)", args[i+1])
+			}
+			opts.QueueSize = queueSize
+			i++
+		case "--iterations":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --iterations")
+			}
+			iterations, err := strconv.Atoi(args[i+1])
+			if err != nil || iterations < 1 {
+				return fmt.Errorf("invalid iterations: %s (must be a positive number)", args[i+1])
+			}
+			opts.Iterations = iterations
+			i++
+		case "--csv-input":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --csv-input")
+			}
+			csvInput = args[i+1]
+			i++
+		case "--folder":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --folder")
+			}
+			folderPath = args[i+1]
+			i++
+		case "--key":
+			if i+1 >= len(args) {
+				return fmt.Errorf("missing value for --key")
+			}
+			keyPath = args[i+1]
+			i++
+		default:
+			return fmt.Errorf("unknown flag for benchmark: %s", args[i])
+		}
+	}
+
+	// Invalid engine sizing is rejected up front.
+	if opts.Workers < 1 || opts.QueueSize < 1 {
+		return fmt.Errorf("workers and queue-size must be positive")
+	}
+
+	// Missing sample data fails fast with a friendly message.
+	if info, err := os.Stat(csvInput); err != nil || info.IsDir() {
+		return fmt.Errorf("csv input not found at %q: run from the repo root or pass --csv-input", csvInput)
+	}
+	if info, err := os.Stat(folderPath); err != nil || !info.IsDir() {
+		return fmt.Errorf("encrypt folder not found at %q: run from the repo root or pass --folder", folderPath)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		return fmt.Errorf("encryption key not found at %q", keyPath)
+	}
+
+	report, err := bench.RunAll(context.Background(), opts, csvInput, folderPath, keyPath)
+	if err != nil {
+		return err
+	}
+	printJSON(report)
+	return nil
 }
 
 // commandConfig prints or updates config.json values from CLI flags.

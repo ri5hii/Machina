@@ -244,6 +244,7 @@ machina types                                  List registered job types
 machina register <profile> <job-name>         Generate and register a job
 machina unregister <job-name>                 Remove a registered job
 machina config [flags]                         Read or update config.json
+machina benchmark [flags]                      Benchmark built-in jobs (JSON output)
 ```
 
 `profile` returns scaffolding profiles such as `batch` and `singleRun`.
@@ -257,6 +258,66 @@ machina config [flags]                         Read or update config.json
 |---|---|---|
 | File encrypt | `file_encrypt` | AES-256-GCM encrypts every file in a folder |
 | CSV transform | `csv_transform` | Applies uppercase, lowercase, or trim to every row in a CSV |
+
+---
+
+## Benchmarks
+
+`machina benchmark` runs both built-in job types through the real engine pipeline
+(submit → worker pool → complete) and prints a structured JSON report with median
+throughput. Run it from the repo root so the sample test data is found:
+
+```
+machina benchmark
+machina benchmark --workers 4 --queue-size 100 --iterations 5
+machina benchmark --csv-input tests/data/csv/input/employees_01.csv --folder tests/data/encrypt/input
+```
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--workers` | `config.json` | Worker pool size |
+| `--queue-size` | `config.json` | Bounded queue capacity |
+| `--iterations` | `3` | Passes per job type; median is reported |
+| `--csv-input` | `tests/data/csv/input/employees_01.csv` | CSV file for `csv_transform` |
+| `--folder` | `tests/data/encrypt/input` | Folder for `file_encrypt` |
+| `--key` | `tests/data/keys/default.key` | 32-byte AES key |
+
+Example output (measured on 12th Gen Intel i7-12700H):
+
+```json
+{
+  "command": "benchmark",
+  "engine": {
+    "workerCount": 9,
+    "queuesize": 8,
+    "iterations": 3
+  },
+  "results": [
+    {
+      "jobType": "csv_transform",
+      "iterations": 3,
+      "rowsProcessed": 30000,
+      "medianDurationMs": 21.7,
+      "rowsPerSec": 460953
+    },
+    {
+      "jobType": "file_encrypt",
+      "iterations": 3,
+      "filesProcessed": 330,
+      "bytesProcessed": 314595180,
+      "medianDurationMs": 46.2,
+      "mbPerSec": 2267
+    }
+  ]
+}
+```
+
+The same harness powers the reproducible runs recorded in `bench/benchmark-results.txt`
+(csv_transform rows/sec, AES-256-GCM MB/s, and engine jobs/s across worker/queue
+configurations). Numbers vary by hardware; the CSV transform is I/O-bound, while
+AES-256-GCM is limited by AES-NI throughput.
 
 ---
 
